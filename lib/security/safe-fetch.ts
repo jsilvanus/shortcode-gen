@@ -29,20 +29,19 @@ async function assertPublicHost(hostname: string) {
 export async function safeFetch(url: string, options: { allowedDomains?: string[]; timeoutMs?: number; maxBytes?: number } = {}) {
   let current = new URL(url);
   if (!["http:", "https:"].includes(current.protocol)) throw new Error("Only HTTP(S) targets are allowed");
-  const maxRedirects = MAX_REDIRECTS;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
 
-  for (let redirect = 0; redirect <= maxRedirects; redirect++) {
+  for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
     if (options.allowedDomains?.length && !options.allowedDomains.some(domain => current.hostname === domain || current.hostname.endsWith(`.${domain}`))) throw new Error("Target domain is not allowed");
     await assertPublicHost(current.hostname);
-    const response = await fetch(current, { redirect: "manual", signal: AbortSignal.timeout(timeoutMs), headers: { "User-Agent": "shortcode-gen-metadata/1.0" } });
+    const response = await fetch(current, { redirect: "manual", signal: AbortSignal.timeout(timeoutMs), headers: { "User-Agent": "shortcode-gen-metadata/1.0", Accept: "text/html,application/xhtml+xml" } });
     if (![301, 302, 303, 307, 308].includes(response.status)) {
       const length = Number(response.headers.get("content-length") ?? 0);
       if (length > maxBytes) throw new Error("Response is too large");
       const body = new Uint8Array(await response.arrayBuffer());
       if (body.byteLength > maxBytes) throw new Error("Response is too large");
-      return { response, body };
+      return { response, body, finalUrl: current.toString() };
     }
     const location = response.headers.get("location");
     if (!location) throw new Error("Redirect without a location");
