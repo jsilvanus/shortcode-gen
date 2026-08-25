@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentDomainContext } from "@/lib/domain-context";
 import { DomainContextNav } from "@/components/admin/domain-context-nav";
+import { DomainUserManager } from "@/components/admin/domain-user-manager";
 import { db } from "@/lib/db";
 
 export default async function DomainUsersPage() {
@@ -16,9 +17,7 @@ export default async function DomainUsersPage() {
       <DomainContextNav hostname={context.domain.hostname} aliases={aliases.map(a => a.hostname)} role="ADMIN" />
       <h1>Users</h1>
       <p>Users with access to {context.domain.hostname}.</p>
-      <table><thead><tr><th>User</th><th>Role</th></tr></thead><tbody>
-        {memberships.map(m => <tr key={m.user.id}><td>{m.user.name || m.user.email}</td><td>{m.role}</td></tr>)}
-      </tbody></table>
+      <DomainUserManager domainId={context.domain.id} initialUsers={memberships} />
     </main>
   );
 }
