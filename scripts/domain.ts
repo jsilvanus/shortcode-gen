@@ -1,7 +1,11 @@
 import { db } from "@/lib/db";
 
 function usage(): never {
-  console.error(`Usage:\n  npm run domain -- create --hostname <host> --name <name>\n  npm run domain -- admin add --domain <host> --email <email>\n  npm run domain -- admin remove --domain <host> --email <email>\n  npm run domain -- admin list --domain <host>`);
+  console.error(`Usage:
+  npm run domain -- create --hostname <host> --name <name>
+  npm run domain -- admin add --domain <host> --username <username>
+  npm run domain -- admin remove --domain <host> --username <username>
+  npm run domain -- admin list --domain <host>`);
   process.exit(2);
 }
 
@@ -28,36 +32,55 @@ async function domainByHost(value: string) {
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
+
   if (command === "create") {
     const host = hostname(arg(args, "--hostname"));
-    const name = arg(args, "--name");
+    const name = arg(args, "--name").trim();
+    if (!name) throw new Error("Domain name is required");
     const domain = await db.domain.create({ data: { hostname: host, name } });
     console.log(`Created domain ${domain.hostname} (${domain.id})`);
     return;
   }
+
   if (command === "admin") {
     const action = args[1];
     const domain = await domainByHost(arg(args, "--domain"));
+
     if (action === "list") {
-      const members = await db.domainMembership.findMany({ where: { domainId: domain.id, role: "ADMIN" }, include: { user: { select: { email: true, name: true } } }, orderBy: { createdAt: "asc" } });
-      for (const member of members) console.log(`${member.user.email}\t${member.user.name ?? ""}`);
+      const members = await db.domainMembership.findMany({
+        where: { domainId: domain.id, role: "ADMIN" },
+        include: { user: { select: { username: true } } },
+        orderBy: { createdAt: "asc" },
+      });
+      for (const member of members) console.log(member.user.username);
       return;
     }
-    const email = arg(args, "--email").trim().toLowerCase();
-    const user = await db.user.findUnique({ where: { email } });
-    if (!user) throw new Error(`User not found: ${email}`);
+
+    const username = arg(args, "--username").trim();
+    const user = await db.user.findUnique({ where: { username } });
+    if (!user) throw new Error(`User not found: ${username}`);
+
     if (action === "add") {
-      await db.domainMembership.upsert({ where: { domainId_userId: { domainId: domain.id, userId: user.id } }, update: { role: "ADMIN" }, create: { domainId: domain.id, userId: user.id, role: "ADMIN" } });
-      console.log(`Added ${user.email} as ADMIN to ${domain.hostname}`);
+      await db.domainMembership.upsert({
+        where: { domainId_userId: { domainId: domain.id, userId: user.id } },
+        update: { role: "ADMIN" },
+        create: { domainId: domain.id, userId: user.id, role: "ADMIN" },
+      });
+      console.log(`Added ${user.username} as ADMIN to ${domain.hostname}`);
       return;
     }
+
     if (action === "remove") {
       await db.domainMembership.deleteMany({ where: { domainId: domain.id, userId: user.id } });
-      console.log(`Removed ${user.email} from ${domain.hostname}`);
+      console.log(`Removed ${user.username} from ${domain.hostname}`);
       return;
     }
   }
+
   usage();
 }
 
-main().catch(async error => { console.error(error instanceof Error ? error.message : error); process.exitCode = 1; }).finally(() => db.$disconnect());
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exitCode = 1;
+}).finally(() => db.$disconnect());
