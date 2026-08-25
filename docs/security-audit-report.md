@@ -6,8 +6,8 @@ Branch: `security-audit`
 
 ### SEC-001 — Link edit bypassed target-domain and TTL policy — HIGH — fixed
 ### SEC-002 — `allowCustomCodes` policy was not enforced — MEDIUM — fixed
-### SEC-003 — Login brute-force protection — mitigated, production follow-up required
-Login throttles repeated failures by IP+username for 15 minutes. The counter is process-local and must become shared state before horizontally scaled production.
+### SEC-003 — Login brute-force protection — fixed
+Login throttles repeated failures by IP+username for 15 minutes using database-backed state, so the limit is shared across application instances. Periodic cleanup of expired rows should be included in operational maintenance.
 ### SEC-004 — Client-supplied proxy headers influence analytics identity — deployment control
 Staging/production Compose keeps the app unpublished behind nginx/Traefik; the proxy must normalize forwarding headers.
 ### SEC-005 — Public-link collaborative editing — REVIEW
@@ -32,7 +32,7 @@ Helper-level authorization tests cover the core matrix. Endpoint integration tes
 
 `lib/security/safe-fetch.ts` provides the worker fetch primitive with HTTP(S)-only URLs, allowed-domain validation, DNS/private-address checks, redirect revalidation, five-redirect limit, 8-second timeout, 1 MB response limit, and fail-closed address handling. IPv4/IPv6 private-address tests are included.
 
-The timed metadata refresh must use `safeFetch()`; this must remain covered by a worker integration test so future changes cannot reintroduce raw server-side `fetch()`.
+`worker/index.ts` is now present and runs pending metadata jobs on a configurable polling interval (3 hours by default). `tests/metadata-worker.test.ts` verifies that scheduled metadata processing calls `safeFetch()` and does not bypass the SSRF boundary.
 
 ## Session and input hardening
 
@@ -44,12 +44,11 @@ The timed metadata refresh must use `safeFetch()`; this must remain covered by a
 
 ## Remaining audit work
 
-1. Replace process-local login throttling with shared production state.
-2. Add worker integration tests proving timed metadata refresh uses `safeFetch()`.
-3. Audit remaining API input limits and error-message leakage.
-4. Run dependency/build/static checks.
-5. Final proxy/network/container hardening review.
-6. Add endpoint integration tests when the test harness can exercise Next.js handlers with a test database.
+1. Audit remaining API input limits and error-message leakage.
+2. Run dependency/build/static checks.
+3. Final proxy/network/container hardening review.
+4. Add endpoint integration tests when the test harness can exercise Next.js handlers with a test database.
+5. Operational cleanup for expired LoginAttempt rows.
 
 ## Authorization matrix
 
