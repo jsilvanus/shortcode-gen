@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { canonicalizeCode } from "@/lib/links/codes";
 import { canEditLink } from "@/lib/auth/authorization";
 import { getCurrentUser } from "@/lib/auth/session";
+import { validateExpiry, validateTargetUrl } from "@/lib/links/service";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ code: string }> }) {
   const user = await getCurrentUser();
@@ -13,7 +14,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
   if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!canEditLink(user.role === "ADMIN" ? "ADMIN" : "USER", link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  let targetUrl: string | undefined;
+  let expiresAt: Date | null | undefined;
+  try {
+    if (body?.targetUrl !== undefined) {
+      if (typeof body.targetUrl !== "string") throw new Error("Invalid target URL");
+      targetUrl = (await validateTargetUrl(body.targetUrl)).url.toString();
+    }
+    if (body?.expiresAt !== undefined) {
+      if (body.expiresAt !== null && typeof body.expiresAt !== "string") throw new Error("Invalid expiration date");
+      expiresAt = body.expiresAt === null ? null : new Date(body.expiresAt);
+      const settings = (await validateTargetUrl(link.targetUrl)).settings;
+      validateExpiry(expiresAt, settings);
+    }
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid link data" }, { status: 400 });
+  }
+
   const collectionIds = Array.isArray(body?.collectionIds) && body.collectionIds.every((x: unknown) => typeof x === "string") ? [...new Set(body.collectionIds as string[])] : null;
+  if (body?.collectionIds !== undefined && !collectionIds) return NextResponse.json({ error: "Invalid collectionIds" }, { status: 400 });
   if (collectionIds) {
     const allowed = await db.collection.findMany({ where: { id: { in: collectionIds }, ...(user.role === "ADMIN" ? {} : { ownerId: user.id }) }, select: { id: true } });
     if (allowed.length !== collectionIds.length) return NextResponse.json({ error: "You can only assign links to collections you manage" }, { status: 403 });
@@ -21,9 +40,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
 
   const updated = await db.$transaction(async tx => {
     const result = await tx.shortLink.update({ where: { id: link.id }, data: {
-      ...(typeof body?.targetUrl === "string" ? { targetUrl: body.targetUrl } : {}),
+      ...(targetUrl !== undefined ? { targetUrl } : {}),
       ...(typeof body?.isPrivate === "boolean" ? { isPrivate: body.isPrivate } : {}),
-      ...(body?.expiresAt === null || typeof body?.expiresAt === "string" ? { expiresAt: body.expiresAt ? new Date(body.expiresAt) : null } : {}),
+      ...(expiresAt !== undefined ? { expiresAt } : {}),
       ...(typeof body?.title === "string" ? { title: body.title } : {}),
       ...(typeof body?.description === "string" ? { description: body.description } : {}),
       ...(typeof body?.active === "boolean" ? { active: body.active } : {}),
