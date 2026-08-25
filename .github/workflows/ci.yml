@@ -17,3 +17,18 @@ jobs:
       - run: npx prisma generate
       - run: npm test
       - run: npm run build
+
+  domain-isolation:
+    name: Domain isolation integration test
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: file:./ci-domain-isolation.db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npx prisma generate
+      - run: npx prisma db push --force-reset --skip-generate
+      - run: npm run test:integration
