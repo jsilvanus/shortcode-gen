@@ -68,3 +68,26 @@ export async function listDomainAliases(domainId: string) {
 export async function deleteDomainAlias(domainId: string, aliasId: string) {
   return db.domainAlias.deleteMany({ where: { id: aliasId, domainId } });
 }
+
+export async function listDomainMembers(domainId: string) {
+  return db.domainMembership.findMany({
+    where: { domainId },
+    include: { user: { select: { id: true, username: true, role: true } } },
+    orderBy: { user: { username: "asc" } },
+  });
+}
+
+export async function upsertDomainMember(domainId: string, userId: string, role: DomainRole) {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { id: true } });
+  if (!user) throw new Error("User not found");
+  return db.domainMembership.upsert({
+    where: { domainId_userId: { domainId, userId } },
+    create: { domainId, userId, role },
+    update: { role },
+    include: { user: { select: { id: true, username: true, role: true } } },
+  });
+}
+
+export async function removeDomainMember(domainId: string, userId: string) {
+  return db.domainMembership.deleteMany({ where: { domainId, userId } });
+}
