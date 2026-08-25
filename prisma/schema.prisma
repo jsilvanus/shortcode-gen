@@ -33,6 +33,7 @@ model Domain {
   memberships  DomainMembership[]
   links        ShortLink[]
   aliases      DomainAlias[]
+  collections  Collection[]
   @@index([active])
 }
 
@@ -76,8 +77,8 @@ model LoginAttempt {
   key       String   @id
   count     Int      @default(0)
   resetAt   DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   @@index([resetAt])
 }
 
@@ -131,15 +132,19 @@ model ShortLink {
 
 model Collection {
   id String @id @default(cuid())
+  domainId String
   name String
   description String?
   ownerId String
   isPrivate Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  domain Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
   owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   links LinkCollection[]
-  @@unique([ownerId, name])
+  @@unique([domainId, name])
+  @@index([domainId])
+  @@index([domainId, ownerId])
   @@index([ownerId])
   @@index([isPrivate])
 }
