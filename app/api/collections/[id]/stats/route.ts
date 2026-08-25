@@ -7,10 +7,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const context = await getCurrentDomainContext();
   const user = context.user;
-  if (!user || !context.membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  const isSystemAdmin = user.role === "ADMIN";
+  if (!isSystemAdmin && !context.membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const collection = await db.collection.findUnique({ where: { id }, select: { domainId: true, ownerId: true, isPrivate: true } });
   if (!collection || collection.domainId !== context.domain.id) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const isAdmin = context.membership.role === "ADMIN";
+  const isAdmin = isSystemAdmin || context.membership?.role === "ADMIN";
   const ownerOrAdmin = isAdmin || collection.ownerId === user.id;
   if (!ownerOrAdmin && collection.isPrivate) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const url = new URL(request.url);
