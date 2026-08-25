@@ -30,7 +30,9 @@ For each short link and calendar day, store:
 - unique page viewers
 - unique redirect visitors
 
-The daily aggregate is therefore useful for long-term statistics without retaining individual visit records indefinitely.
+Daily aggregation happens after the calendar day has ended, during a scheduled worker run. It is not performed synchronously on every request.
+
+The aggregation is idempotent: rerunning aggregation for a day replaces/upserts that day's aggregate rather than incrementing it again.
 
 ## Page view vs redirect
 
@@ -44,6 +46,6 @@ A crawler/social preview fetch may produce a page view without producing a redir
 
 ## Retention worker
 
-The scheduled worker removes `LinkVisit` records older than 90 days. It does not remove `LinkDailyStat` records.
+The scheduled worker performs daily aggregation for completed days and removes `LinkVisit` records older than 90 days. It does not remove `LinkDailyStat` records.
 
-Daily aggregation should happen when an event is recorded, so the permanent statistic does not depend on retaining the raw event for 90 days.
+The aggregation job should run after the day has ended, and should be retryable if a worker run fails. Because the raw events remain for 90 days, a missed aggregation can be reconstructed safely.
