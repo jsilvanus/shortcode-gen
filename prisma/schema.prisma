@@ -54,6 +54,8 @@ model ShortLink {
   active                Boolean  @default(true)
   owner                 User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   jobs                  Job[]
+  visits                LinkVisit[]
+  dailyStats            LinkDailyStat[]
 
   @@index([ownerId])
   @@index([isPrivate])
@@ -83,4 +85,30 @@ model Job {
 
   @@index([status, runAfter])
   @@index([shortLinkId])
+}
+
+model LinkVisit {
+  id          String    @id @default(cuid())
+  shortLinkId String
+  eventType   String
+  visitorHash String
+  createdAt   DateTime  @default(now())
+  shortLink   ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
+
+  @@index([shortLinkId, createdAt])
+  @@index([createdAt])
+}
+
+model LinkDailyStat {
+  id          String    @id @default(cuid())
+  shortLinkId String
+  date        DateTime
+  pageViews   Int       @default(0)
+  redirects   Int       @default(0)
+  uniqueViews Int       @default(0)
+  uniqueRedirects Int   @default(0)
+  shortLink   ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
+
+  @@unique([shortLinkId, date])
+  @@index([shortLinkId, date])
 }
