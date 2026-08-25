@@ -8,7 +8,7 @@ export default async function UserDashboardPage() {
   if (!user) redirect("/admin/login");
   const links = await db.shortLink.findMany({
     where: { OR: [{ ownerId: user.id }, { isPrivate: false }] },
-    select: { id: true, code: true, title: true, isPrivate: true, active: true, expiresAt: true, collections: { select: { collectionId: true } } },
+    select: { id: true, code: true, title: true, targetUrl: true, isPrivate: true, active: true, expiresAt: true, collections: { select: { collectionId: true } } },
     orderBy: { code: "asc" },
   });
   const collections = await db.collection.findMany({
