@@ -16,6 +16,7 @@ model User {
   updatedAt    DateTime    @updatedAt
   sessions     Session[]
   links        ShortLink[]
+  collections  Collection[]
 }
 
 model Session {
@@ -56,11 +57,38 @@ model ShortLink {
   jobs                  Job[]
   visits                LinkVisit[]
   dailyStats            LinkDailyStat[]
+  collections           LinkCollection[]
 
   @@index([ownerId])
   @@index([isPrivate])
   @@index([expiresAt])
   @@index([active])
+}
+
+model Collection {
+  id          String           @id @default(cuid())
+  name        String
+  description String?
+  ownerId     String
+  isPrivate   Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  owner       User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  links       LinkCollection[]
+
+  @@unique([ownerId, name])
+  @@index([ownerId])
+  @@index([isPrivate])
+}
+
+model LinkCollection {
+  shortLinkId String
+  collectionId String
+  shortLink   ShortLink  @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@id([shortLinkId, collectionId])
+  @@index([collectionId])
 }
 
 model SiteSetting {
