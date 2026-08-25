@@ -13,6 +13,7 @@ services:
     volumes:
       - screenshots:/data/screenshots
     networks:
+      - app
       - traefik
     labels:
       - traefik.enable=true
@@ -36,12 +37,14 @@ services:
     volumes:
       - screenshots:/data/screenshots
     networks:
-      - traefik
+      - app
 
 volumes:
   screenshots:
 
 networks:
+  app:
+    driver: bridge
   traefik:
     external: true
     name: ${TRAEFIK_NETWORK:-traefik}
