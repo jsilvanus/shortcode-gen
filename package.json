@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "vitest run",
+    "test": "vitest run --exclude 'tests/**/*.integration.test.ts'",
+    "test:integration": "vitest run tests/domain-isolation.integration.test.ts",
     "test:watch": "vitest",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
@@ -32,9 +33,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "prisma": "^6.14.0",
     "tsx": "^4.20.3",
-    "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }
 }
