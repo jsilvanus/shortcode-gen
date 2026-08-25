@@ -32,6 +32,18 @@ describe("multi-domain database isolation", () => {
     expect((await getActiveDomainByHostname(`ALIAS-A-${suffix}.EXAMPLE.TEST`))?.id).toBe(domainA.id);
   });
 
+  it("resolves aliases to the same links as the canonical hostname", async () => {
+    const canonicalDomain = await getActiveDomainByHostname(`short-a-${suffix}.example.test`);
+    const aliasDomain = await getActiveDomainByHostname(`alias-a-${suffix}.example.test`);
+    expect(canonicalDomain?.id).toBe(aliasDomain?.id);
+    const [canonicalLink, aliasLink] = await Promise.all([
+      db.shortLink.findUnique({ where: { domainId_code: { domainId: canonicalDomain!.id, code: "kirkko" } } }),
+      db.shortLink.findUnique({ where: { domainId_code: { domainId: aliasDomain!.id, code: "kirkko" } } }),
+    ]);
+    expect(aliasLink?.id).toBe(canonicalLink?.id);
+    expect(aliasLink?.targetUrl).toBe("https://a.example.test");
+  });
+
   it("allows the same code in separate domains", async () => {
     const links = await db.shortLink.findMany({ where: { code: "kirkko" } });
     expect(links).toHaveLength(2);
