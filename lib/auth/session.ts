@@ -6,10 +6,12 @@ const SESSION_COOKIE = "shortcode_session";
 const SESSION_DAYS = 30;
 
 export async function createSession(userId: string): Promise<void> {
+  const cookieStore = await cookies();
+  const previousId = cookieStore.get(SESSION_COOKIE)?.value;
+  if (previousId) await db.session.deleteMany({ where: { id: previousId } });
   const id = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
   await db.session.create({ data: { id, userId, expiresAt } });
-  const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, id, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", expires: expiresAt });
 }
 
