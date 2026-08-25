@@ -2,18 +2,16 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { canonicalizeCode } from "@/lib/links/codes";
 import { canEditLink } from "@/lib/auth/authorization";
+import { getCurrentUser } from "@/lib/auth/session";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ code: string }> }) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   const { code } = await params;
   const body = await request.json();
   const link = await db.shortLink.findUnique({ where: { code: canonicalizeCode(code) } });
   if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  // TODO: replace request-supplied identity with the authenticated session user.
-  const currentUserId = typeof body.currentUserId === "string" ? body.currentUserId : "";
-  const role = body.role === "ADMIN" ? "ADMIN" : "USER";
-  if (!canEditLink(role, link.ownerId, currentUserId, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
+  if (!canEditLink(user.role === "ADMIN" ? "ADMIN" : "USER", link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const updated = await db.shortLink.update({ where: { id: link.id }, data: {
     ...(typeof body.targetUrl === "string" ? { targetUrl: body.targetUrl } : {}),
     ...(typeof body.isPrivate === "boolean" ? { isPrivate: body.isPrivate } : {}),
@@ -25,15 +23,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ code: string }> }) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   const { code } = await params;
-  const body = await request.json().catch(() => ({}));
   const link = await db.shortLink.findUnique({ where: { code: canonicalizeCode(code) } });
   if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const currentUserId = typeof body.currentUserId === "string" ? body.currentUserId : "";
-  const role = body.role === "ADMIN" ? "ADMIN" : "USER";
-  if (!canEditLink(role, link.ownerId, currentUserId, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
+  if (!canEditLink(user.role === "ADMIN" ? "ADMIN" : "USER", link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await db.shortLink.delete({ where: { id: link.id } });
   return new NextResponse(null, { status: 204 });
 }
