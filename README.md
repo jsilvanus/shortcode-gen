@@ -22,6 +22,44 @@ The worker is started separately when implementing background metadata processin
 npm run worker
 ```
 
+## Multi-domain administration
+
+Each managed hostname is a domain. A domain may also have aliases; aliases resolve to the same domain, links, collections, users, and settings.
+
+Domain administration is performed in the web UI by a domain `ADMIN`. Installation-level domain creation and assigning the first domain administrator are intentionally CLI operations.
+
+Create a domain:
+
+```bash
+npm run domain -- create \
+  --hostname short.example.fi \
+  --name "Example organization"
+```
+
+Assign an existing user as a domain administrator:
+
+```bash
+npm run domain -- admin add \
+  --domain short.example.fi \
+  --username admin
+```
+
+List domain administrators:
+
+```bash
+npm run domain -- admin list --domain short.example.fi
+```
+
+Remove a domain administrator:
+
+```bash
+npm run domain -- admin remove \
+  --domain short.example.fi \
+  --username admin
+```
+
+The global `User.role` is not a domain-access bypass. Web access is determined by `DomainMembership`; `DomainMembership.role = ADMIN` is the authoritative domain administrator role.
+
 ## Code formats
 
 Generated codes use a human-friendly alphabet and are case-insensitive:
