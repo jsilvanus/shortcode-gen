@@ -9,12 +9,12 @@ export async function PUT(request: Request, { params }: { params: Promise<{ code
   const context = await getCurrentDomainContext();
   const user = context.user;
   if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (user.role !== "ADMIN" && !context.membership) return NextResponse.json({ error: "Domain access required" }, { status: 403 });
+  if (!context.membership) return NextResponse.json({ error: "Domain access required" }, { status: 403 });
   const { code } = await params;
   const body = await request.json().catch(() => null);
   const link = await db.shortLink.findUnique({ where: { domainId_code: { domainId: context.domain.id, code: canonicalizeCode(code) } } });
   if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const role = user.role === "ADMIN" || context.membership?.role === "ADMIN" ? "ADMIN" : "USER";
+  const role = context.membership.role === "ADMIN" ? "ADMIN" : "USER";
   if (!canEditLink(role, link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!Array.isArray(body?.collectionIds) || body.collectionIds.some((id: unknown) => typeof id !== "string")) return NextResponse.json({ error: "collectionIds must be an array" }, { status: 400 });
   const collectionIds = [...new Set(body.collectionIds as string[])];
