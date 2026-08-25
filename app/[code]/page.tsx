@@ -1,11 +1,19 @@
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { getActiveLink } from "@/lib/links/service";
+import { getCurrentDomain } from "@/lib/domain-context";
 import { recordVisit } from "@/lib/analytics";
 
 export default async function ShortLinkPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
-  const link = await getActiveLink(code);
+  let domain;
+  try {
+    domain = await getCurrentDomain();
+  } catch {
+    notFound();
+  }
+
+  const link = await getActiveLink(domain.id, code);
   if (!link) notFound();
   const requestHeaders = await headers();
   const ip = requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ?? requestHeaders.get("x-real-ip") ?? "unknown";
