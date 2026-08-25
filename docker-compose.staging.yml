@@ -1,0 +1,45 @@
+services:
+  app:
+    image: ${SHORTCODE_IMAGE:?set SHORTCODE_IMAGE}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+    expose:
+      - "3000"
+    networks:
+      - app
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-shortcode}
+      POSTGRES_USER: ${POSTGRES_USER:-shortcode}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app
+
+  nginx:
+    image: nginx:1.29-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/staging.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - app
+
+volumes:
+  postgres_data:
+
+networks:
+  app:
+    driver: bridge

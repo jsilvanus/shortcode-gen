@@ -1,0 +1,25 @@
+services:
+  app:
+    image: ${SHORTCODE_IMAGE:?set SHORTCODE_IMAGE}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+    expose:
+      - "3000"
+    networks:
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-traefik}
+      - traefik.http.routers.shortcode.rule=Host(`${SHORTCODE_HOST:?set SHORTCODE_HOST}`)
+      - traefik.http.routers.shortcode.entrypoints=websecure
+      - traefik.http.routers.shortcode.tls=true
+      - traefik.http.services.shortcode.loadbalancer.server.port=3000
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}
