@@ -21,20 +21,25 @@ export function isPrivateAddress(ip: string) {
   return true;
 }
 
-async function assertPublicHost(hostname: string) {
-  const addresses = await dns.lookup(hostname, { all: true, verbatim: true });
+export function hostnameAllowed(hostname: string, allowedDomains?: string[]) {
+  return !allowedDomains?.length || allowedDomains.some(domain => hostname === domain || hostname.endsWith(`.${domain}`));
+}
+
+export async function assertSafeUrl(url: string, allowedDomains?: string[]) {
+  const parsed = new URL(url);
+  if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("Only HTTP(S) targets are allowed");
+  if (!hostnameAllowed(parsed.hostname, allowedDomains)) throw new Error("Target domain is not allowed");
+  const addresses = await dns.lookup(parsed.hostname, { all: true, verbatim: true });
   if (!addresses.length || addresses.some(({ address }) => isPrivateAddress(address))) throw new Error("Target resolves to a private or reserved address");
 }
 
 export async function safeFetch(url: string, options: { allowedDomains?: string[]; timeoutMs?: number; maxBytes?: number; headers?: Record<string, string> } = {}) {
   let current = new URL(url);
-  if (!["http:", "https:"].includes(current.protocol)) throw new Error("Only HTTP(S) targets are allowed");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
 
   for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
-    if (options.allowedDomains?.length && !options.allowedDomains.some(domain => current.hostname === domain || current.hostname.endsWith(`.${domain}`))) throw new Error("Target domain is not allowed");
-    await assertPublicHost(current.hostname);
+    await assertSafeUrl(current.toString(), options.allowedDomains);
     const response = await fetch(current, { redirect: "manual", signal: AbortSignal.timeout(timeoutMs), headers: { "User-Agent": "shortcode-gen-metadata/1.0", Accept: "text/html,application/xhtml+xml", ...options.headers } });
     if (response.status === 304) return { response, body: new Uint8Array(), finalUrl: current.toString() };
     if (![301, 302, 303, 307, 308].includes(response.status)) {
@@ -47,7 +52,6 @@ export async function safeFetch(url: string, options: { allowedDomains?: string[
     const location = response.headers.get("location");
     if (!location) throw new Error("Redirect without a location");
     current = new URL(location, current);
-    if (!["http:", "https:"].includes(current.protocol)) throw new Error("Redirect target is not HTTP(S)");
   }
   throw new Error("Too many redirects");
 }
