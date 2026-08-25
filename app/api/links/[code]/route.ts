@@ -2,29 +2,32 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { canonicalizeCode } from "@/lib/links/codes";
 import { canEditLink } from "@/lib/auth/authorization";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getCurrentDomainContext } from "@/lib/domain-context";
 import { validateExpiry, validateTargetUrl } from "@/lib/links/service";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ code: string }> }) {
-  const user = await getCurrentUser();
+  const context = await getCurrentDomainContext();
+  const user = context.user;
   if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  if (user.role !== "ADMIN" && !context.membership) return NextResponse.json({ error: "Domain access required" }, { status: 403 });
   const { code } = await params;
   const body = await request.json().catch(() => null);
-  const link = await db.shortLink.findUnique({ where: { code: canonicalizeCode(code) } });
+  const link = await db.shortLink.findUnique({ where: { domainId_code: { domainId: context.domain.id, code: canonicalizeCode(code) } } });
   if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!canEditLink(user.role === "ADMIN" ? "ADMIN" : "USER", link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const role = user.role === "ADMIN" || context.membership?.role === "ADMIN" ? "ADMIN" : "USER";
+  if (!canEditLink(role, link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   let targetUrl: string | undefined;
   let expiresAt: Date | null | undefined;
   try {
     if (body?.targetUrl !== undefined) {
       if (typeof body.targetUrl !== "string") throw new Error("Invalid target URL");
-      targetUrl = (await validateTargetUrl(body.targetUrl)).url.toString();
+      targetUrl = (await validateTargetUrl(body.targetUrl, context.domain.id)).url.toString();
     }
     if (body?.expiresAt !== undefined) {
       if (body.expiresAt !== null && typeof body.expiresAt !== "string") throw new Error("Invalid expiration date");
       expiresAt = body.expiresAt === null ? null : new Date(body.expiresAt);
-      const settings = (await validateTargetUrl(link.targetUrl)).settings;
+      const settings = (await validateTargetUrl(link.targetUrl, context.domain.id)).settings;
       validateExpiry(expiresAt, settings);
     }
   } catch (error) {
@@ -34,8 +37,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
   const collectionIds = Array.isArray(body?.collectionIds) && body.collectionIds.every((x: unknown) => typeof x === "string") ? [...new Set(body.collectionIds as string[])] : null;
   if (body?.collectionIds !== undefined && !collectionIds) return NextResponse.json({ error: "Invalid collectionIds" }, { status: 400 });
   if (collectionIds) {
-    const allowed = await db.collection.findMany({ where: { id: { in: collectionIds }, ...(user.role === "ADMIN" ? {} : { ownerId: user.id }) }, select: { id: true } });
-    if (allowed.length !== collectionIds.length) return NextResponse.json({ error: "You can only assign links to collections you manage" }, { status: 403 });
+    const allowed = await db.collection.findMany({ where: { id: { in: collectionIds }, domainId: context.domain.id, ...(role === "ADMIN" ? {} : { ownerId: user.id }) }, select: { id: true } });
+    if (allowed.length !== collectionIds.length) return NextResponse.json({ error: "You can only assign links to collections you manage in this domain" }, { status: 403 });
   }
 
   const updated = await db.$transaction(async tx => {
@@ -56,13 +59,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
   return NextResponse.json(updated);
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ code: string }> }) {
-  const user = await getCurrentUser();
+export async function DELETE(_request: Request, { params }: { params: Promise<{ code: string }> }) {
+  const context = await getCurrentDomainContext();
+  const user = context.user;
   if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  if (user.role !== "ADMIN" && !context.membership) return NextResponse.json({ error: "Domain access required" }, { status: 403 });
   const { code } = await params;
-  const link = await db.shortLink.findUnique({ where: { code: canonicalizeCode(code) } });
+  const link = await db.shortLink.findUnique({ where: { domainId_code: { domainId: context.domain.id, code: canonicalizeCode(code) } } });
   if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!canEditLink(user.role === "ADMIN" ? "ADMIN" : "USER", link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const role = user.role === "ADMIN" || context.membership?.role === "ADMIN" ? "ADMIN" : "USER";
+  if (!canEditLink(role, link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await db.shortLink.delete({ where: { id: link.id } });
   return new NextResponse(null, { status: 204 });
 }
