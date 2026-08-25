@@ -8,12 +8,42 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  username     String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  sessions     Session[]
+  id            String              @id @default(cuid())
+  username      String              @unique
+  passwordHash  String
+  role          String              @default("USER")
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  sessions      Session[]
+  memberships   DomainMembership[]
+  domainsCreated Domain[]           @relation("DomainCreatedBy")
+}
+
+model Domain {
+  id           String             @id @default(cuid())
+  hostname     String             @unique
+  name         String
+  active       Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  createdById  String?
+  createdBy    User?              @relation("DomainCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  memberships  DomainMembership[]
+  @@index([active])
+}
+
+model DomainMembership {
+  id        String   @id @default(cuid())
+  domainId  String
+  userId    String
+  role      String   @default("USER")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  domain    Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([domainId, userId])
+  @@index([userId])
+  @@index([domainId])
 }
 
 model Session {
