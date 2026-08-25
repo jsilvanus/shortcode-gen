@@ -5,57 +5,44 @@ Branch: `security-audit`
 ## Findings
 
 ### SEC-001 — Link edit bypassed target-domain and TTL policy — HIGH — fixed
-
-Link edits now use the same target-domain and TTL validation as creation.
-
 ### SEC-002 — `allowCustomCodes` policy was not enforced — MEDIUM — fixed
-
-Custom-code creation now respects the site policy and default TTL.
-
 ### SEC-003 — Login brute-force protection — mitigated, production follow-up required
-
-Login now throttles repeated failures by IP+username for 15 minutes. The current counter is process-local and must be replaced with shared state before horizontally scaled production deployment.
-
+Login throttles repeated failures by IP+username for 15 minutes. The counter is process-local and must become shared state before horizontally scaled production.
 ### SEC-004 — Client-supplied proxy headers influence analytics identity — deployment control
-
-Staging and production Compose deployments now keep the app unpublished and place it behind nginx/Traefik, with the proxy responsible for normalizing forwarding headers. Direct exposure of the app must remain prohibited.
-
+Staging/production Compose keeps the app unpublished behind nginx/Traefik; the proxy must normalize forwarding headers.
 ### SEC-005 — Public-link collaborative editing — REVIEW
+Intentional product capability: authenticated users may edit other users' public links. Keep explicit regression coverage.
+### SEC-006 — Public collection statistics included private links — HIGH — fixed
+A public collection could contain private links, and its statistics endpoint previously aggregated them for other users. Public collection statistics now exclude private links for non-owners; owners/admins retain full access.
 
-Intentional product capability: authenticated users may edit other users' public links. Keep explicit regression coverage and documentation.
+## Endpoint authorization audit
 
-## Authorization regression tests
+Reviewed link CRUD, link-to-collection assignment, link statistics, collection CRUD, collection statistics, dashboard statistics, and admin settings.
 
-Added `tests/authorization.test.ts` covering owner/private, other-user/private, public collaborative editing, admin access, and admin-only site settings. API-level endpoint integration tests are still required because helper-level tests cannot prove that every route invokes authorization correctly.
+- Link statistics apply link visibility authorization.
+- Dashboard statistics authorize every requested link before aggregation.
+- Link-to-collection assignment requires link edit access and rejects another user's private collections for normal users.
+- Collection CRUD is owner/admin restricted.
+- Public collection statistics exclude private links.
+- Admin settings are admin-only.
+
+Helper-level authorization tests cover the core matrix. Endpoint integration tests remain desirable once a route-handler test database harness is available.
 
 ## SSRF hardening
 
-Added `lib/security/safe-fetch.ts` as the worker fetch primitive. It:
+`lib/security/safe-fetch.ts` provides the worker fetch primitive with HTTP(S)-only URLs, allowed-domain validation, DNS/private-address checks, redirect revalidation, five-redirect limit, 8-second timeout, 1 MB response limit, and fail-closed address handling. IPv4/IPv6 private-address tests are included.
 
-- permits HTTP(S) only;
-- validates the hostname against the configured allowlist when supplied;
-- resolves DNS before every request and rejects private/reserved addresses;
-- manually follows redirects and re-validates every destination;
-- limits redirects to five;
-- applies an 8-second timeout;
-- enforces a 1 MB response limit;
-- fails closed for unknown/non-IP address formats.
-
-Added `tests/safe-fetch.test.ts` for private/loopback IPv4 and IPv6 handling.
-
-**Important:** the repository currently does not contain the planned `worker/` implementation. Therefore the safe fetch primitive is not yet wired to a worker. When the metadata worker is implemented, it must use `safeFetch()` rather than raw `fetch()`.
+The metadata worker implementation must be checked/wired to use `safeFetch()` before production, including appropriate content-type restrictions.
 
 ## Remaining audit work
 
-1. Add endpoint-level authorization tests for links, collections, statistics, and settings.
-2. Verify collection membership endpoints for IDOR and information leakage.
-3. Verify statistics endpoints for private-link leakage and cross-user aggregation.
-4. Wire the metadata worker to `safeFetch()` when worker code lands, including content-type restrictions appropriate to metadata extraction.
-5. Replace process-local login throttling with shared production state.
-6. Verify session lifecycle, cookie settings, logout, and revocation.
-7. Audit input limits and error-message leakage.
-8. Run dependency/build/static checks.
-9. Final proxy/network/container hardening review.
+1. Verify/wire metadata worker to `safeFetch()`.
+2. Replace process-local login throttling with shared production state.
+3. Verify session lifecycle, cookie settings, logout, and revocation.
+4. Audit input limits and error-message leakage.
+5. Run dependency/build/static checks.
+6. Final proxy/network/container hardening review.
+7. Add endpoint integration tests when the test harness can exercise Next.js handlers with a test database.
 
 ## Authorization matrix
 
