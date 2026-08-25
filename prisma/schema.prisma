@@ -34,6 +34,7 @@ model Domain {
   links        ShortLink[]
   aliases      DomainAlias[]
   collections  Collection[]
+  settings     DomainSetting?
   @@index([active])
 }
 
@@ -159,6 +160,15 @@ model LinkCollection {
 }
 
 model SiteSetting { key String @id value String updatedAt DateTime @updatedAt }
+
+model DomainSetting {
+  id        String   @id @default(cuid())
+  domainId  String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  domain    Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+}
 
 model Job {
   id String @id @default(cuid())
