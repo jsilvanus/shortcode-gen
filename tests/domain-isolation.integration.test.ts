@@ -1,7 +1,7 @@
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
-import { db } from "@/lib/db";
-import { getActiveDomainByHostname, getDomainRole } from "@/lib/domain";
-import { setLinkCollections } from "@/lib/collections/service";
+import { db } from "../lib/db";
+import { getActiveDomainByHostname, getDomainRole } from "../lib/domain";
+import { setLinkCollections } from "../lib/collections/service";
 
 describe("multi-domain database isolation", () => {
   const suffix = Date.now().toString();
