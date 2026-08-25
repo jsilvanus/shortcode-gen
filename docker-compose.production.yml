@@ -7,8 +7,11 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      SCREENSHOT_DIR: /data/screenshots
     expose:
       - "3000"
+    volumes:
+      - screenshots:/data/screenshots
     networks:
       - traefik
     labels:
@@ -18,6 +21,25 @@ services:
       - traefik.http.routers.shortcode.entrypoints=websecure
       - traefik.http.routers.shortcode.tls=true
       - traefik.http.services.shortcode.loadbalancer.server.port=3000
+
+  worker:
+    image: ${SHORTCODE_IMAGE:?set SHORTCODE_IMAGE}
+    restart: unless-stopped
+    command: ["npm", "run", "worker"]
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      SCREENSHOT_DIR: /data/screenshots
+      WORKER_POLL_MS: ${WORKER_POLL_MS:-10800000}
+    volumes:
+      - screenshots:/data/screenshots
+    networks:
+      - traefik
+
+volumes:
+  screenshots:
 
 networks:
   traefik:
