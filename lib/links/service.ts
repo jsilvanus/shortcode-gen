@@ -2,6 +2,22 @@ import { db } from "@/lib/db";
 import { canonicalizeCode, generateCode, validateCustomCode } from "@/lib/links/codes";
 import { getSiteSettings, isAllowedTargetDomain } from "@/lib/settings";
 
+export async function validateTargetUrl(targetUrl: string) {
+  const settings = await getSiteSettings();
+  const url = new URL(targetUrl);
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error("Only HTTP(S) targets are allowed");
+  if (!isAllowedTargetDomain(url.hostname, settings.linkPolicy.allowedDomains)) throw new Error("Target domain is not allowed");
+  return { url, settings };
+}
+
+export function validateExpiry(expiresAt: Date | null | undefined, settings: Awaited<ReturnType<typeof getSiteSettings>>) {
+  if (expiresAt && Number.isNaN(expiresAt.getTime())) throw new Error("Invalid expiration date");
+  if (expiresAt && settings.linkPolicy.maxTtlDays !== null) {
+    const max = Date.now() + settings.linkPolicy.maxTtlDays * 86400000;
+    if (expiresAt.getTime() > max) throw new Error("TTL exceeds the configured maximum");
+  }
+}
+
 export async function createShortLink(input: {
   targetUrl: string;
   ownerId: string;
@@ -9,15 +25,10 @@ export async function createShortLink(input: {
   isPrivate?: boolean;
   expiresAt?: Date | null;
 }) {
-  const settings = await getSiteSettings();
-  const url = new URL(input.targetUrl);
-  if (!["http:", "https:"].includes(url.protocol)) throw new Error("Only HTTP(S) targets are allowed");
-  if (!isAllowedTargetDomain(url.hostname, settings.linkPolicy.allowedDomains)) throw new Error("Target domain is not allowed");
-  if (input.expiresAt && settings.linkPolicy.maxTtlDays !== null) {
-    const max = Date.now() + settings.linkPolicy.maxTtlDays * 86400000;
-    if (input.expiresAt.getTime() > max) throw new Error("TTL exceeds the configured maximum");
-  }
-
+  const { url, settings } = await validateTargetUrl(input.targetUrl);
+  const expiresAt = input.expiresAt ?? (settings.linkPolicy.defaultTtlDays === null ? null : new Date(Date.now() + settings.linkPolicy.defaultTtlDays * 86400000));
+  validateExpiry(expiresAt, settings);
+  if (input.code && !settings.linkPolicy.allowCustomCodes) throw new Error("Custom codes are disabled");
   let code = input.code ? canonicalizeCode(input.code) : generateCode();
   if (input.code && !validateCustomCode(input.code)) throw new Error("Invalid custom code");
   if (!input.code) {
@@ -26,13 +37,9 @@ export async function createShortLink(input: {
       code = generateCode();
     }
   }
-
   const existing = await db.shortLink.findUnique({ where: { code } });
   if (existing) throw new Error("Code already exists");
-  return db.shortLink.create({ data: {
-    code, codeType: input.code ? "CUSTOM" : "GENERATED", targetUrl: url.toString(), ownerId: input.ownerId,
-    isPrivate: input.isPrivate ?? settings.linkPolicy.defaultPrivate, expiresAt: input.expiresAt ?? null,
-  } });
+  return db.shortLink.create({ data: { code, codeType: input.code ? "CUSTOM" : "GENERATED", targetUrl: url.toString(), ownerId: input.ownerId, isPrivate: input.isPrivate ?? settings.linkPolicy.defaultPrivate, expiresAt } });
 }
 
 export async function getActiveLink(code: string) {
