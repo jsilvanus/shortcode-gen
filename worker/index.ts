@@ -4,7 +4,12 @@ import { processMetadataJob } from "@/lib/metadata-worker";
 const POLL_MS = Number(process.env.WORKER_POLL_MS ?? 3 * 60 * 60 * 1000);
 const BATCH_SIZE = Number(process.env.WORKER_BATCH_SIZE ?? 20);
 
+async function cleanupExpiredLoginAttempts() {
+  await db.loginAttempt.deleteMany({ where: { resetAt: { lte: new Date() } } });
+}
+
 async function runOnce() {
+  await cleanupExpiredLoginAttempts();
   const jobs = await db.job.findMany({
     where: { type: "METADATA", status: "pending", runAfter: { lte: new Date() } },
     orderBy: { runAfter: "asc" },
