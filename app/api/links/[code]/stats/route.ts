@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { canonicalizeCode } from "@/lib/links/codes";
-import { getSessionUser } from "@/lib/auth/session";
+import { getCurrentDomainContext } from "@/lib/domain-context";
 import { canViewLink } from "@/lib/auth/authorization";
 import { estimateHll, mergeHll, deserializeHll } from "@/lib/analytics/hll";
 
 export async function GET(request: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
-  const link = await db.shortLink.findUnique({ where: { code: canonicalizeCode(code) } });
+  const context = await getCurrentDomainContext();
+  const link = await db.shortLink.findUnique({ where: { domainId_code: { domainId: context.domain.id, code: canonicalizeCode(code) } } });
   if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const user = await getSessionUser();
-  if (!user || !canViewLink(user.role, link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const user = context.user;
+  if (!user || !context.membership || !canViewLink(context.membership.role === "ADMIN" ? "ADMIN" : "USER", link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const url = new URL(request.url);
   const to = url.searchParams.get("to") ? new Date(url.searchParams.get("to")!) : new Date();
   const from = url.searchParams.get("from") ? new Date(url.searchParams.get("from")!) : new Date(to.getTime() - 30 * 86400000);
