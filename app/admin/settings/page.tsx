@@ -1,20 +1,23 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/session";
-import { getAllowedShortCodeDomains } from "@/lib/settings";
+import { requireCurrentDomainAdmin } from "@/lib/domain-context";
+import { getDomainSettings } from "@/lib/settings";
+import { SettingsForm } from "@/components/admin/settings-form";
 
 export default async function SettingsPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/admin/login");
-  if (user.role !== "ADMIN") redirect("/admin/dashboard");
+  let context;
+  try {
+    context = await requireCurrentDomainAdmin();
+  } catch {
+    redirect("/admin/login");
+  }
 
-  const domains = await getAllowedShortCodeDomains();
+  const settings = await getDomainSettings(context.domain.id);
 
   return (
     <main>
-      <h1>Site settings</h1>
-      <h2>Allowed target domains</h2>
-      <p>Only administrators can change this setting.</p>
-      <textarea name="domains" defaultValue={domains.join("\n")} rows={10} cols={50} />
+      <h1>Domain settings</h1>
+      <p>Configuring {context.domain.hostname}</p>
+      <SettingsForm initialSettings={settings} />
     </main>
   );
 }
