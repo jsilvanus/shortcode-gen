@@ -7,13 +7,20 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
 model User {
-  id           String   @id @default(cuid())
-  username     String   @unique
+  id           String     @id @default(cuid())
+  username     String     @unique
   passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  role         UserRole   @default(USER)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
   sessions     Session[]
+  links        ShortLink[]
 }
 
 model Session {
@@ -28,44 +35,55 @@ model Session {
 }
 
 model ShortLink {
-  id                   String   @id @default(cuid())
-  code                 String   @unique
-  codeType             String
-  targetUrl            String
-  title                String?
-  description          String?
-  canonicalUrl         String?
-  imageUrl             String?
-  faviconUrl           String?
-  screenshotPath       String?
-  metadataSource       String?
-  contentHash          String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  lastCheckedAt        DateTime?
+  id                    String   @id @default(cuid())
+  code                  String   @unique
+  codeType              String
+  targetUrl             String
+  ownerId               String
+  isPrivate             Boolean  @default(true)
+  title                 String?
+  description           String?
+  canonicalUrl          String?
+  imageUrl              String?
+  faviconUrl            String?
+  screenshotPath        String?
+  metadataSource        String?
+  contentHash           String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  lastCheckedAt         DateTime?
   lastSuccessfulFetchAt DateTime?
-  expiresAt            DateTime?
-  clickCount           Int      @default(0)
-  lastClickedAt        DateTime?
-  active               Boolean  @default(true)
-  jobs                 Job[]
+  expiresAt             DateTime?
+  clickCount            Int      @default(0)
+  lastClickedAt         DateTime?
+  active                Boolean  @default(true)
+  owner                 User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  jobs                  Job[]
 
+  @@index([ownerId])
+  @@index([isPrivate])
   @@index([expiresAt])
   @@index([active])
 }
 
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 model Job {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   type        String
   shortLinkId String
-  status      String   @default("pending")
-  attempts    Int      @default(0)
-  runAfter    DateTime @default(now())
+  status      String    @default("pending")
+  attempts    Int       @default(0)
+  runAfter    DateTime  @default(now())
   startedAt   DateTime?
   finishedAt  DateTime?
   lastError   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   shortLink   ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
 
   @@index([status, runAfter])
