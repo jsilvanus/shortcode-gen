@@ -3,6 +3,7 @@ import { mkdir, rename } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
 import { db } from "@/lib/db";
+import { getDomainSettings } from "@/lib/settings";
 import { assertSafeUrl, safeFetch } from "@/lib/security/safe-fetch";
 
 const MAX_BYTES = 1_000_000;
@@ -13,10 +14,9 @@ function absoluteUrl(value: string, base: string): string | null {
   try { return new URL(value, base).toString(); } catch { return null; }
 }
 
-async function readAllowedDomains() {
-  const setting = await db.siteSetting.findUnique({ where: { key: "allowedDomains" } });
-  if (!setting?.value) return undefined;
-  try { return JSON.parse(setting.value) as string[]; } catch { return setting.value.split(",").map(value => value.trim()).filter(Boolean); }
+async function readAllowedDomains(domainId: string) {
+  const settings = await getDomainSettings(domainId);
+  return settings.linkPolicy.allowedDomains;
 }
 
 async function fetchPage(initialUrl: string, headers: Record<string, string> = {}) {
@@ -59,8 +59,8 @@ export async function runHttpChangeDetection() {
   return changed;
 }
 
-async function renderPage(browser: import("playwright").Browser, link: { id: string; targetUrl: string }) {
-  const allowedDomains = await readAllowedDomains();
+async function renderPage(browser: import("playwright").Browser, link: { id: string; targetUrl: string; domainId: string }) {
+  const allowedDomains = await readAllowedDomains(link.domainId);
   await assertSafeUrl(link.targetUrl, allowedDomains);
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   try {
