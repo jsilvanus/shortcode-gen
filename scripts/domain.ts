@@ -12,8 +12,9 @@ function arg(args: string[], name: string): string {
 }
 
 function hostname(value: string): string {
-  const parsed = new URL(`https://${value}`);
-  if (parsed.hostname !== value.trim().toLowerCase().replace(/\.$/, "") || parsed.username || parsed.password || parsed.port || parsed.pathname !== "/" || parsed.search || parsed.hash) throw new Error("Invalid hostname");
+  const normalized = value.trim().toLowerCase().replace(/\.$/, "");
+  const parsed = new URL(`https://${normalized}`);
+  if (parsed.hostname !== normalized || parsed.username || parsed.password || parsed.port || parsed.pathname !== "/" || parsed.search || parsed.hash) throw new Error("Invalid hostname");
   return parsed.hostname;
 }
 
@@ -37,8 +38,13 @@ async function main() {
   if (command === "admin") {
     const action = args[1];
     const domain = await domainByHost(arg(args, "--domain"));
-    const email = arg(args, "--email");
-    const user = await db.user.findUnique({ where: { email: email.trim().toLowerCase() } });
+    if (action === "list") {
+      const members = await db.domainMembership.findMany({ where: { domainId: domain.id, role: "ADMIN" }, include: { user: { select: { email: true, name: true } } }, orderBy: { createdAt: "asc" } });
+      for (const member of members) console.log(`${member.user.email}\t${member.user.name ?? ""}`);
+      return;
+    }
+    const email = arg(args, "--email").trim().toLowerCase();
+    const user = await db.user.findUnique({ where: { email } });
     if (!user) throw new Error(`User not found: ${email}`);
     if (action === "add") {
       await db.domainMembership.upsert({ where: { domainId_userId: { domainId: domain.id, userId: user.id } }, update: { role: "ADMIN" }, create: { domainId: domain.id, userId: user.id, role: "ADMIN" } });
@@ -50,7 +56,6 @@ async function main() {
       console.log(`Removed ${user.email} from ${domain.hostname}`);
       return;
     }
-    usage();
   }
   usage();
 }
