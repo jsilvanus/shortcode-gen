@@ -152,23 +152,84 @@ Shortcode Gen -containerien ei tarvitse itse hoitaa julkisen HTTPS:n sertifikaat
 
 ## 5. Production containers
 
-Web ja worker voivat käyttää samaa imagea:
+Web ja worker käyttävät samaa imagea, mutta ovat **eri Docker-containereita ja eri prosesseja**:
 
 ```text
 shortcode-gen:<version>
+        |
+        +--------------------------+
+        |                          |
+        v                          v
+  shortcode-web              shortcode-worker
+  command:                   command:
+    npm run start              npm run worker
 ```
 
-Esimerkiksi:
-
-```text
-shortcode-web
-  command: npm run start
-
-shortcode-worker
-  command: npm run worker
-```
+Yksi image voidaan siis julkaista kerran ja käynnistää kahdella eri Compose-palvelulla.
 
 Containerien tulee olla mahdollisimman stateless lukuun ottamatta screenshot-tiedostoja.
+
+### 5.1 Graceful shutdown
+
+Web- ja worker-containerien shutdown käsitellään eri tavalla niiden tehtävien perusteella.
+
+#### Web
+
+Web-containerissa normaali Next.js-prosessi vastaanottaa Dockerin `SIGTERM`-signaalin ja lopettaa hallitusti. Reverse proxyn tulee poistaa vanha container liikenteen piiristä ennen sen pysäyttämistä, jotta uusia pyyntöjä ei ohjata sulkeutuvaan instanssiin.
+
+Web-containerille varataan shutdowniin riittävä grace period, esimerkiksi:
+
+```yaml
+web:
+  stop_grace_period: 30s
+```
+
+Erillistä process manageria ei käytetä containerin sisällä.
+
+#### Worker
+
+Workerin tulee käsitellä `SIGTERM` ja `SIGINT` itse.
+
+Shutdownin aikana worker:
+
+1. lopettaa uusien jobien aloittamisen
+2. antaa parhaillaan käynnissä olevan jobin valmistua
+3. sulkee tietokantayhteydet ja muut resurssit
+4. poistuu normaalisti
+
+Workerille varataan webiä pidempi grace period, esimerkiksi:
+
+```yaml
+worker:
+  stop_grace_period: 60s
+```
+
+Jos worker ei poistu grace periodin aikana, Docker voi lopulta pakottaa prosessin alas. Grace periodin tulee siksi olla riittävän pitkä normaalin screenshot- ja metadata-jobin valmistumiseen.
+
+Workerin shutdown-logiikan perusperiaate on:
+
+```text
+SIGTERM
+   |
+   v
+shuttingDown = true
+   |
+   v
+älä aloita uutta jobia
+   |
+   v
+viimeistele nykyinen jobi
+   |
+   v
+sulje resurssit
+   |
+   v
+exit
+```
+
+Worker-jobien tulee lisäksi olla mahdollisimman turvallisia toistaa. Jos container kaatuu tai jobi keskeytyy ennen valmistumista, seuraavan worker-kierroksen pitää voida yrittää työtä uudelleen ilman rikkinäistä tilaa. Tavoitteena on käytännössä vähintään **at-least-once** -tyyppinen työnsuoritus.
+
+Erillistä process manageria, kuten `supervisord`:ia, ei käytetä containerin sisällä. Yksi pääprosessi per container pidetään deployment-mallin perustana.
 
 ## 6. Persistent screenshot storage
 
@@ -183,6 +244,8 @@ Productionissa screenshot-hakemisto mountataan persistenttiin volumeen:
 Sama volume on tarvittaessa mountattava sekä web- että worker-containeriin, jos web tarjoilee screenshotit suoraan tiedostojärjestelmästä ja worker kirjoittaa niitä.
 
 Stagingissa voidaan käyttää vastaavaa Docker-volumea.
+
+Screenshot-jobien tulee kirjoittaa lopullinen tiedosto siten, ettei keskeneräinen tiedosto näyttäydy valmiina screenshotina. Tarvittaessa tiedosto voidaan kirjoittaa väliaikaisella nimellä ja nimetä valmiiksi vasta onnistuneen kirjoituksen jälkeen.
 
 ## 7. Configuration and secrets
 
@@ -263,6 +326,27 @@ Docker image
 
 CI/CD:n yksityiskohtainen toteutus voidaan päättää myöhemmin. Deployment-suunnitelman ei tarvitse sitoa projektia tiettyyn registryyn tai CI-palveluun tässä vaiheessa.
 
+### 9.1 Production container update
+
+Webin ja workerin päivityksessä käytetään samaa versionoitua imagea. Molemmat containerit vaihdetaan hallitusti, mutta niiden graceful shutdown -käytännöt säilyvät erillisinä:
+
+```text
+new image
+   |
+   +--> new web container
+   |       |
+   |       +--> health check
+   |
+   +--> new worker container
+           |
+           +--> ready
+
+old web      -- SIGTERM --> drain --> exit
+old worker   -- SIGTERM --> finish job --> exit
+```
+
+Webin liikenne ohjataan uudelle healthy-instanssille ennen vanhan web-containerin poistamista aina kun deployment-ympäristö ja Traefik-konfiguraatio mahdollistavat sen. Workerille ei tarvita liikenteen drainia: se lopettaa uusien jobien aloittamisen ja viimeistelee nykyisen työn ennen poistumistaan.
+
 ## 10. Health checks
 
 Sovelluksella tulee olla kevyt health endpoint, esimerkiksi:
@@ -274,6 +358,8 @@ GET /api/health
 Health checkin tulee varmistaa ainakin, että web-sovellus on käynnissä. Tarvittaessa voidaan erottaa readiness-check, joka tarkistaa myös tietokantayhteyden.
 
 Docker-, staging- ja Traefik-konfiguraatioiden tulee pystyä käyttämään health/readiness-tietoa liikenteen ohjaamiseen.
+
+Workerille voidaan myöhemmin lisätä erillinen health/readiness-mekanismi, jos sen toimintaa halutaan seurata aktiivisesti. Workerin normaali graceful shutdown ei kuitenkaan edellytä erillistä HTTP-palvelinta.
 
 ## 11. Staging smoke tests
 
@@ -299,7 +385,8 @@ Production-deploymentissa:
 4. käynnistetään uusi web/worker-versio
 5. varmistetaan health endpoint
 6. varmistetaan Traefikin kautta saavutettavuus
-7. vasta sen jälkeen vanha versio poistetaan
+7. annetaan vanhoille web- ja worker-containereille graceful shutdown -aika
+8. vasta sen jälkeen vanhat versiot poistetaan
 
 Jos mahdollista, web-palvelun päivitys tehdään niin, että lyhyt katkos vältetään.
 
@@ -318,6 +405,8 @@ previous known-good image
 ```
 
 Database rollbackia ei oleteta automaattiseksi. Migrationit suunnitellaan ensisijaisesti backward-compatible tavalla, jotta sovellusversion rollback ei riko tietokantaa.
+
+Workerin keskeneräisen jobin osalta rollback perustuu siihen, että jobit ovat turvallisesti uudelleenajettavia. Uuden worker-version graceful shutdown antaa nykyisen jobin valmistua ennen rollbackia aina kun mahdollista.
 
 ## 14. Backups
 
@@ -368,8 +457,8 @@ Docker: yes
 ### Production
 
 ```text
-Next.js: Docker
-Worker: Docker
+Next.js: Docker container
+Worker: separate Docker container
 DB: PostgreSQL / another project's Docker container
 Proxy: Traefik
 Docker: yes
@@ -378,3 +467,5 @@ Docker: yes
 ## 17. Deployment principle
 
 Local development optimizes for speed and simplicity. Staging optimizes for reproducibility and production-like behavior. Production keeps the application deployment separate from the PostgreSQL infrastructure that already exists elsewhere.
+
+The web and worker are separate processes and separate containers, even though they use the same application image. The web container drains HTTP traffic during shutdown; the worker stops accepting new jobs, finishes the current job, closes resources, and exits. Jobs should be safely retryable so that an unexpected interruption does not leave the system in an unrecoverable state.
