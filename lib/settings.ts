@@ -26,17 +26,6 @@ export type SiteSettings = {
   appearance: { brandIconUrl: string; faviconUrl: string; footerText: string; themes: { light: ThemeSettings; dark: ThemeSettings; contrast: ThemeSettings } };
 };
 
-export async function getSiteSettings(): Promise<SiteSettings> {
-  const setting = await db.siteSetting.findUnique({ where: { key: SETTING_KEY } });
-  if (!setting) return structuredClone(DEFAULT_SETTINGS) as SiteSettings;
-  try { return mergeSettings(JSON.parse(setting.value) as Partial<SiteSettings>); } catch { return structuredClone(DEFAULT_SETTINGS) as SiteSettings; }
-}
-
-export async function saveSiteSettings(settings: SiteSettings): Promise<SiteSettings> {
-  await db.siteSetting.upsert({ where: { key: SETTING_KEY }, create: { key: SETTING_KEY, value: JSON.stringify(settings) }, update: { value: JSON.stringify(settings) } });
-  return settings;
-}
-
 function mergeSettings(input: Partial<SiteSettings>): SiteSettings {
   return {
     general: { ...DEFAULT_SETTINGS.general, ...input.general },
@@ -52,6 +41,32 @@ function mergeSettings(input: Partial<SiteSettings>): SiteSettings {
       },
     },
   };
+}
+
+export async function getSiteSettings(): Promise<SiteSettings> {
+  const setting = await db.siteSetting.findUnique({ where: { key: SETTING_KEY } });
+  if (!setting) return structuredClone(DEFAULT_SETTINGS) as SiteSettings;
+  try { return mergeSettings(JSON.parse(setting.value) as Partial<SiteSettings>); } catch { return structuredClone(DEFAULT_SETTINGS) as SiteSettings; }
+}
+
+export async function getDomainSettings(domainId: string): Promise<SiteSettings> {
+  const setting = await db.domainSetting.findUnique({ where: { domainId } });
+  if (!setting) return getSiteSettings();
+  try { return mergeSettings(JSON.parse(setting.value) as Partial<SiteSettings>); } catch { return getSiteSettings(); }
+}
+
+export async function saveDomainSettings(domainId: string, settings: SiteSettings): Promise<SiteSettings> {
+  await db.domainSetting.upsert({
+    where: { domainId },
+    create: { domainId, value: JSON.stringify(settings) },
+    update: { value: JSON.stringify(settings) },
+  });
+  return settings;
+}
+
+export async function saveSiteSettings(settings: SiteSettings): Promise<SiteSettings> {
+  await db.siteSetting.upsert({ where: { key: SETTING_KEY }, create: { key: SETTING_KEY, value: JSON.stringify(settings) }, update: { value: JSON.stringify(settings) } });
+  return settings;
 }
 
 export function isAllowedTargetDomain(hostname: string, allowedDomains: string[]): boolean {
