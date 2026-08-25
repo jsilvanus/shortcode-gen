@@ -4,8 +4,7 @@ import { getActiveDomainByHostname, getDomainMembership } from "@/lib/domain";
 
 export async function getRequestHostname(): Promise<string> {
   const requestHeaders = await headers();
-  const forwardedHost = requestHeaders.get("x-forwarded-host");
-  const host = forwardedHost?.split(",", 1)[0]?.trim() || requestHeaders.get("host");
+  const host = requestHeaders.get("host");
   if (!host) throw new Error("HOSTNAME_REQUIRED");
   return host;
 }
