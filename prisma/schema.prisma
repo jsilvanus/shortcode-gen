@@ -25,40 +25,39 @@ model Session {
   expiresAt DateTime
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@index([userId])
   @@index([expiresAt])
 }
 
 model ShortLink {
-  id                    String   @id @default(cuid())
-  code                  String   @unique
-  codeType              String
-  targetUrl             String
-  ownerId               String
-  isPrivate             Boolean  @default(true)
-  title                 String?
-  description           String?
-  canonicalUrl          String?
-  imageUrl              String?
-  faviconUrl            String?
-  screenshotPath        String?
-  metadataSource        String?
-  contentHash           String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  lastCheckedAt         DateTime?
+  id String @id @default(cuid())
+  code String @unique
+  codeType String
+  targetUrl String
+  ownerId String
+  isPrivate Boolean @default(true)
+  title String?
+  description String?
+  canonicalUrl String?
+  imageUrl String?
+  faviconUrl String?
+  screenshotPath String?
+  metadataSource String?
+  contentHash String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastCheckedAt DateTime?
   lastSuccessfulFetchAt DateTime?
-  expiresAt             DateTime?
-  clickCount            Int      @default(0)
-  lastClickedAt         DateTime?
-  active                Boolean  @default(true)
-  owner                 User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  jobs                  Job[]
-  visits                LinkVisit[]
-  dailyStats            LinkDailyStat[]
-  collections           LinkCollection[]
-
+  expiresAt DateTime?
+  clickCount Int @default(0)
+  lastClickedAt DateTime?
+  active Boolean @default(true)
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  jobs Job[]
+  visits LinkVisit[]
+  dailyStats LinkDailyStat[]
+  monthlyStats LinkMonthlyStat[]
+  collections LinkCollection[]
   @@index([ownerId])
   @@index([isPrivate])
   @@index([expiresAt])
@@ -66,16 +65,15 @@ model ShortLink {
 }
 
 model Collection {
-  id          String           @id @default(cuid())
-  name        String
+  id String @id @default(cuid())
+  name String
   description String?
-  ownerId     String
-  isPrivate   Boolean          @default(true)
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  owner       User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  links       LinkCollection[]
-
+  ownerId String
+  isPrivate Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  links LinkCollection[]
   @@unique([ownerId, name])
   @@index([ownerId])
   @@index([isPrivate])
@@ -84,59 +82,65 @@ model Collection {
 model LinkCollection {
   shortLinkId String
   collectionId String
-  shortLink   ShortLink  @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
+  shortLink ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
   collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-
   @@id([shortLinkId, collectionId])
   @@index([collectionId])
 }
 
-model SiteSetting {
-  key       String   @id
-  value     String
-  updatedAt DateTime @updatedAt
-}
+model SiteSetting { key String @id value String updatedAt DateTime @updatedAt }
 
 model Job {
-  id          String    @id @default(cuid())
-  type        String
+  id String @id @default(cuid())
+  type String
   shortLinkId String
-  status      String    @default("pending")
-  attempts    Int       @default(0)
-  runAfter    DateTime  @default(now())
-  startedAt   DateTime?
-  finishedAt  DateTime?
-  lastError   String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  shortLink   ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
-
+  status String @default("pending")
+  attempts Int @default(0)
+  runAfter DateTime @default(now())
+  startedAt DateTime?
+  finishedAt DateTime?
+  lastError String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  shortLink ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
   @@index([status, runAfter])
   @@index([shortLinkId])
 }
 
 model LinkVisit {
-  id          String    @id @default(cuid())
+  id String @id @default(cuid())
   shortLinkId String
-  eventType   String
+  eventType String
   visitorHash String
-  createdAt   DateTime  @default(now())
-  shortLink   ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
-
+  createdAt DateTime @default(now())
+  shortLink ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
   @@index([shortLinkId, createdAt])
   @@index([createdAt])
 }
 
 model LinkDailyStat {
-  id          String    @id @default(cuid())
+  id String @id @default(cuid())
   shortLinkId String
-  date        DateTime
-  pageViews   Int       @default(0)
-  redirects   Int       @default(0)
-  uniqueViews Int       @default(0)
-  uniqueRedirects Int   @default(0)
-  shortLink   ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
-
+  date DateTime
+  pageViews Int @default(0)
+  redirects Int @default(0)
+  uniqueViews Int @default(0)
+  uniqueRedirects Int @default(0)
+  shortLink ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
   @@unique([shortLinkId, date])
   @@index([shortLinkId, date])
+}
+
+model LinkMonthlyStat {
+  id String @id @default(cuid())
+  shortLinkId String
+  year Int
+  month Int
+  uniqueViewsHll String
+  uniqueRedirectsHll String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  shortLink ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
+  @@unique([shortLinkId, year, month])
+  @@index([shortLinkId, year, month])
 }
