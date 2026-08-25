@@ -42,10 +42,14 @@ export async function getDomainRole(userId: string, domainId: string): Promise<D
 }
 
 export async function canAccessDomain(userId: string, domainId: string) {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { role: true } });
+  if (user?.role === "ADMIN") return true;
   return (await getDomainMembership(userId, domainId)) !== null;
 }
 
 export async function canManageDomain(userId: string, domainId: string) {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { role: true } });
+  if (user?.role === "ADMIN") return true;
   return (await getDomainRole(userId, domainId)) === "ADMIN";
 }
 
@@ -55,4 +59,12 @@ export async function createDomainAlias(domainId: string, hostname: string) {
   const canonical = await db.domain.findUnique({ where: { hostname: normalized }, select: { id: true } });
   if (canonical) throw new Error("Hostname is already a canonical domain");
   return db.domainAlias.create({ data: { domainId, hostname: normalized } });
+}
+
+export async function listDomainAliases(domainId: string) {
+  return db.domainAlias.findMany({ where: { domainId }, orderBy: { hostname: "asc" } });
+}
+
+export async function deleteDomainAlias(domainId: string, aliasId: string) {
+  return db.domainAlias.deleteMany({ where: { id: aliasId, domainId } });
 }
