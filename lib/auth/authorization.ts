@@ -1,4 +1,4 @@
-import type { UserRole } from "@prisma/client";
+export type UserRole = "USER" | "ADMIN";
 
 export function canViewLink(
   role: UserRole,
