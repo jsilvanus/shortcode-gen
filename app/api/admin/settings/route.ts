@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSiteSettings, saveSiteSettings } from "@/lib/settings";
-import { requireAdmin } from "@/lib/auth/session";
+import { getDomainSettings, saveDomainSettings } from "@/lib/settings";
+import { requireCurrentDomainAdmin } from "@/lib/domain-context";
 
 const theme = z.object({ background: z.string().regex(/^#[0-9a-fA-F]{6}$/), primary: z.string().regex(/^#[0-9a-fA-F]{6}$/), secondary: z.string().regex(/^#[0-9a-fA-F]{6}$/) });
 const settingsSchema = z.object({
@@ -12,14 +12,30 @@ const settingsSchema = z.object({
   appearance: z.object({ brandIconUrl: z.string().url().or(z.literal("")), faviconUrl: z.string().url().or(z.literal("")), footerText: z.string().max(1000), themes: z.object({ light: theme, dark: theme, contrast: theme }) }),
 });
 
+async function authorize() {
+  return requireCurrentDomainAdmin();
+}
+
 export async function GET() {
-  try { await requireAdmin(); } catch (error) { return NextResponse.json({ error: error instanceof Error && error.message === "ADMIN_REQUIRED" ? "Forbidden" : "Authentication required" }, { status: error instanceof Error && error.message === "ADMIN_REQUIRED" ? 403 : 401 }); }
-  return NextResponse.json(await getSiteSettings());
+  try {
+    const { domain } = await authorize();
+    return NextResponse.json(await getDomainSettings(domain.id));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const status = message === "AUTHENTICATION_REQUIRED" ? 401 : 403;
+    return NextResponse.json({ error: status === 401 ? "Authentication required" : "Forbidden" }, { status });
+  }
 }
 
 export async function PUT(request: Request) {
-  try { await requireAdmin(); } catch (error) { return NextResponse.json({ error: error instanceof Error && error.message === "ADMIN_REQUIRED" ? "Forbidden" : "Authentication required" }, { status: error instanceof Error && error.message === "ADMIN_REQUIRED" ? 403 : 401 }); }
-  const parsed = settingsSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Invalid settings" }, { status: 400 });
-  return NextResponse.json(await saveSiteSettings(parsed.data));
+  try {
+    const { domain } = await authorize();
+    const parsed = settingsSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: "Invalid settings" }, { status: 400 });
+    return NextResponse.json(await saveDomainSettings(domain.id, parsed.data));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const status = message === "AUTHENTICATION_REQUIRED" ? 401 : 403;
+    return NextResponse.json({ error: status === 401 ? "Authentication required" : "Forbidden" }, { status });
+  }
 }
