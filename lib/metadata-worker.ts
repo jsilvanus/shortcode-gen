@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
 import { db } from "@/lib/db";
@@ -13,16 +13,6 @@ function absoluteUrl(value: string, base: string): string | null {
   try { return new URL(value, base).toString(); } catch { return null; }
 }
 
-function meta(html: string, name: string): string | null {
-  const re = new RegExp(`<meta[^>]+(?:name|property)=["']${name}["'][^>]+content=["']([^"']*)["']|<meta[^>]+content=["']([^"']*)["'][^>]+(?:name|property)=["']${name}["']`, "i");
-  const match = html.match(re); return match?.[1] ?? match?.[2] ?? null;
-}
-function title(html: string): string | null { const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i); return match?.[1]?.replace(/\s+/g, " ").trim() || null; }
-function favicon(html: string, base: string): string | null {
-  const match = html.match(/<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]+href=["']([^"']+)["']/i) ?? html.match(/<link[^>]+href=["']([^"']+)["'][^>]+rel=["'][^"']*icon[^"']*["']/i);
-  return match ? absoluteUrl(match[1], base) : absoluteUrl("/favicon.ico", base);
-}
-
 async function readAllowedDomains() {
   const setting = await db.siteSetting.findUnique({ where: { key: "allowedDomains" } });
   if (!setting?.value) return undefined;
@@ -31,6 +21,7 @@ async function readAllowedDomains() {
 
 async function fetchPage(initialUrl: string, headers: Record<string, string> = {}) {
   const result = await safeFetch(initialUrl, { maxBytes: MAX_BYTES, headers });
+  if (result.response.status === 304) return result;
   const contentType = (result.response.headers.get("content-type") ?? "").toLowerCase();
   if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) throw new Error("Target is not HTML");
   return result;
@@ -47,8 +38,8 @@ export async function runHttpChangeDetection() {
       if (link.lastModified) headers["If-Modified-Since"] = link.lastModified;
       const result = await fetchPage(link.targetUrl, headers);
       const response = result.response;
-      const etag = response.headers.get("etag");
-      const lastModified = response.headers.get("last-modified");
+      const etag = response.headers.get("etag") ?? link.etag;
+      const lastModified = response.headers.get("last-modified") ?? link.lastModified;
       if (response.status === 304) {
         await db.shortLink.update({ where: { id: link.id }, data: { etag, lastModified, lastCheckedAt: now } });
         continue;
@@ -122,12 +113,14 @@ export async function processMetadataJob(jobId: string, browser: import("playwri
 }
 
 export async function renderPendingMetadataJobs() {
+  const pending = await db.job.count({ where: { type: "METADATA", status: "pending", runAfter: { lte: new Date() } } });
+  if (!pending) return;
   const browser = await chromium.launch({ headless: true });
   try {
     for (;;) {
       const now = new Date();
       const stale = new Date(now.getTime() - 15 * 60_000);
-      await db.job.updateMany({ where: { type: "METADATA", status: "processing", startedAt: { lt: stale } }, data: { status: "pending", startedAt: null } });
+      await db.job.updateMany({ where: { type: "METADATA", status: "processing", startedAt: { lt: stale } }, data: { status: "pending", startedAt: null, runAfter: now } });
       const candidate = await db.job.findFirst({ where: { type: "METADATA", status: "pending", runAfter: { lte: now } }, orderBy: { runAfter: "asc" } });
       if (!candidate) break;
       const claimed = await db.job.updateMany({ where: { id: candidate.id, status: "pending" }, data: { status: "processing", startedAt: now } });
