@@ -26,7 +26,7 @@ async function assertPublicHost(hostname: string) {
   if (!addresses.length || addresses.some(({ address }) => isPrivateAddress(address))) throw new Error("Target resolves to a private or reserved address");
 }
 
-export async function safeFetch(url: string, options: { allowedDomains?: string[]; timeoutMs?: number; maxBytes?: number } = {}) {
+export async function safeFetch(url: string, options: { allowedDomains?: string[]; timeoutMs?: number; maxBytes?: number; headers?: Record<string, string> } = {}) {
   let current = new URL(url);
   if (!["http:", "https:"].includes(current.protocol)) throw new Error("Only HTTP(S) targets are allowed");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -35,7 +35,8 @@ export async function safeFetch(url: string, options: { allowedDomains?: string[
   for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
     if (options.allowedDomains?.length && !options.allowedDomains.some(domain => current.hostname === domain || current.hostname.endsWith(`.${domain}`))) throw new Error("Target domain is not allowed");
     await assertPublicHost(current.hostname);
-    const response = await fetch(current, { redirect: "manual", signal: AbortSignal.timeout(timeoutMs), headers: { "User-Agent": "shortcode-gen-metadata/1.0", Accept: "text/html,application/xhtml+xml" } });
+    const response = await fetch(current, { redirect: "manual", signal: AbortSignal.timeout(timeoutMs), headers: { "User-Agent": "shortcode-gen-metadata/1.0", Accept: "text/html,application/xhtml+xml", ...options.headers } });
+    if (response.status === 304) return { response, body: new Uint8Array(), finalUrl: current.toString() };
     if (![301, 302, 303, 307, 308].includes(response.status)) {
       const length = Number(response.headers.get("content-length") ?? 0);
       if (length > maxBytes) throw new Error("Response is too large");
