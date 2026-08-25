@@ -1,18 +1,20 @@
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { db } from "../lib/db";
-import { getActiveDomainByHostname, getDomainRole } from "../lib/domain";
+import { canAccessDomain, canManageDomain, getActiveDomainByHostname, getDomainRole } from "../lib/domain";
 import { setLinkCollections } from "../lib/collections/service";
 
 describe("multi-domain database isolation", () => {
   const suffix = Date.now().toString();
   let userA: { id: string };
   let userB: { id: string };
+  let systemAdmin: { id: string };
   let domainA: { id: string };
   let domainB: { id: string };
 
   beforeAll(async () => {
     userA = await db.user.create({ data: { username: `domain-a-${suffix}`, passwordHash: "test", role: "USER" }, select: { id: true } });
     userB = await db.user.create({ data: { username: `domain-b-${suffix}`, passwordHash: "test", role: "USER" }, select: { id: true } });
+    systemAdmin = await db.user.create({ data: { username: `system-admin-${suffix}`, passwordHash: "test", role: "ADMIN" }, select: { id: true } });
     domainA = await db.domain.create({ data: { hostname: `short-a-${suffix}.example.test`, name: "Domain A", memberships: { create: { userId: userA.id, role: "ADMIN" } }, aliases: { create: { hostname: `alias-a-${suffix}.example.test` } } }, select: { id: true } });
     domainB = await db.domain.create({ data: { hostname: `short-b-${suffix}.example.test`, name: "Domain B", memberships: { create: { userId: userB.id, role: "ADMIN" } } }, select: { id: true } });
     await db.shortLink.createMany({ data: [
@@ -23,7 +25,7 @@ describe("multi-domain database isolation", () => {
 
   afterAll(async () => {
     await db.domain.deleteMany({ where: { id: { in: [domainA.id, domainB.id] } } });
-    await db.user.deleteMany({ where: { id: { in: [userA.id, userB.id] } } });
+    await db.user.deleteMany({ where: { id: { in: [userA.id, userB.id, systemAdmin.id] } } });
     await db.$disconnect();
   });
 
@@ -60,6 +62,17 @@ describe("multi-domain database isolation", () => {
     expect(await getDomainRole(userA.id, domainB.id)).toBeNull();
     expect(await getDomainRole(userB.id, domainB.id)).toBe("ADMIN");
     expect(await getDomainRole(userB.id, domainA.id)).toBeNull();
+  });
+
+  it("does not let the legacy global ADMIN role bypass domain membership", async () => {
+    expect(await canAccessDomain(systemAdmin.id, domainA.id)).toBe(false);
+    expect(await canManageDomain(systemAdmin.id, domainA.id)).toBe(false);
+  });
+
+  it("allows only domain admins to manage their domain", async () => {
+    expect(await canManageDomain(userA.id, domainA.id)).toBe(true);
+    expect(await canManageDomain(userA.id, domainB.id)).toBe(false);
+    expect(await canManageDomain(userB.id, domainB.id)).toBe(true);
   });
 
   it("rejects collection relationships that cross domains", async () => {
