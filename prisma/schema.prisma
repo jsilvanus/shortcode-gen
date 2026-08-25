@@ -31,6 +31,7 @@ model Domain {
   createdById  String?
   createdBy    User?              @relation("DomainCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   memberships  DomainMembership[]
+  links        ShortLink[]
   @@index([active])
 }
 
@@ -69,7 +70,8 @@ model LoginAttempt {
 
 model ShortLink {
   id String @id @default(cuid())
-  code String @unique
+  domainId String
+  code String
   codeType String
   targetUrl String
   ownerId String
@@ -97,12 +99,16 @@ model ShortLink {
   clickCount Int @default(0)
   lastClickedAt DateTime?
   active Boolean @default(true)
+  domain Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
   owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   jobs Job[]
   visits LinkVisit[]
   dailyStats LinkDailyStat[]
   monthlyStats LinkMonthlyStat[]
   collections LinkCollection[]
+  @@unique([domainId, code])
+  @@index([domainId])
+  @@index([domainId, ownerId])
   @@index([ownerId])
   @@index([isPrivate])
   @@index([expiresAt])
