@@ -7,10 +7,31 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      SCREENSHOT_DIR: /data/screenshots
     expose:
       - "3000"
+    volumes:
+      - screenshots:/data/screenshots
     networks:
       - app
+
+  worker:
+    image: ${SHORTCODE_IMAGE:?set SHORTCODE_IMAGE}
+    restart: unless-stopped
+    command: ["npm", "run", "worker"]
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      SCREENSHOT_DIR: /data/screenshots
+      WORKER_POLL_MS: ${WORKER_POLL_MS:-10800000}
+    volumes:
+      - screenshots:/data/screenshots
+    networks:
+      - app
+    depends_on:
+      - postgres
 
   postgres:
     image: postgres:17-alpine
@@ -39,6 +60,7 @@ services:
 
 volumes:
   postgres_data:
+  screenshots:
 
 networks:
   app:
