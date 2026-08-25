@@ -6,14 +6,10 @@ export type DomainRole = "USER" | "ADMIN";
 export function normalizeHostname(hostname: string): string {
   const value = hostname.trim().toLowerCase().replace(/\.$/, "");
   if (!value) throw new Error("Hostname is required");
-  if (value.includes("://") || value.includes("/") || value.includes("\\") || value.includes("@") || value.includes(":") || /\s/.test(value)) {
-    throw new Error("Invalid hostname");
-  }
+  if (value.includes("://") || value.includes("/") || value.includes("\\") || value.includes("@") || value.includes(":") || /\s/.test(value)) throw new Error("Invalid hostname");
   if (value.length > 253 || value.startsWith(".") || value.endsWith(".")) throw new Error("Invalid hostname");
   const labels = value.split(".");
-  if (labels.some((label) => !label || label.length > 63 || label.startsWith("-") || label.endsWith("-") || !/^[a-z0-9-]+$/.test(label))) {
-    throw new Error("Invalid hostname");
-  }
+  if (labels.some((label) => !label || label.length > 63 || label.startsWith("-") || label.endsWith("-") || !/^[a-z0-9-]+$/.test(label))) throw new Error("Invalid hostname");
   return value;
 }
 
@@ -41,15 +37,12 @@ export async function getDomainRole(userId: string, domainId: string): Promise<D
   return membership.role as DomainRole;
 }
 
+/** Domain access is membership-based. The legacy User.role is not an authorization bypass. */
 export async function canAccessDomain(userId: string, domainId: string) {
-  const user = await db.user.findUnique({ where: { id: userId }, select: { role: true } });
-  if (user?.role === "ADMIN") return true;
   return (await getDomainMembership(userId, domainId)) !== null;
 }
 
 export async function canManageDomain(userId: string, domainId: string) {
-  const user = await db.user.findUnique({ where: { id: userId }, select: { role: true } });
-  if (user?.role === "ADMIN") return true;
   return (await getDomainRole(userId, domainId)) === "ADMIN";
 }
 
