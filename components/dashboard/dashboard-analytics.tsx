@@ -12,29 +12,16 @@ export function DashboardAnalytics({ links }: { links: LinkOption[] }) {
   const [range, setRange] = useState<keyof typeof ranges>("30d");
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(false);
-
   const selectedLinks = useMemo(() => links.filter(l => selected.includes(l.id)), [links, selected]);
 
   useEffect(() => {
     if (!selectedLinks.length) { setStats(null); return; }
-    const now = new Date();
-    const value = ranges[range];
+    const now = new Date(); const value = ranges[range];
     const from = value === "year" ? new Date(Date.UTC(now.getUTCFullYear(), 0, 1)) : new Date(now.getTime() - Number(value) * 86400000);
     setLoading(true);
-    Promise.all(selectedLinks.map(link => fetch(`/api/links/${encodeURIComponent(link.code)}/stats?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(now.toISOString())}`).then(r => r.ok ? r.json() : null)))
-      .then(items => {
-        const valid = items.filter(Boolean) as Stats[];
-        const dailyMap = new Map<string, { pageViews: number; redirects: number }>();
-        for (const item of valid) for (const day of item.daily) { const current = dailyMap.get(day.date) ?? { pageViews: 0, redirects: 0 }; current.pageViews += day.pageViews; current.redirects += day.redirects; dailyMap.set(day.date, current); }
-        const exact = valid.every(x => x.exact);
-        setStats({ exact, totals: {
-          pageViews: valid.reduce((n, x) => n + x.totals.pageViews, 0),
-          redirects: valid.reduce((n, x) => n + x.totals.redirects, 0),
-          uniqueViews: valid.reduce((n, x) => n + x.totals.uniqueViews, 0),
-          uniqueRedirects: valid.reduce((n, x) => n + x.totals.uniqueRedirects, 0),
-        }, daily: [...dailyMap.entries()].map(([date, value]) => ({ date, ...value })) });
-      }).finally(() => setLoading(false));
-  }, [selectedLinks, range]);
+    fetch(`/api/dashboard/stats?ids=${encodeURIComponent(selected.join(","))}&from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(now.toISOString())}`)
+      .then(r => r.ok ? r.json() : null).then(setStats).finally(() => setLoading(false));
+  }, [selected, selectedLinks.length, range]);
 
   return <section aria-label="Dashboard analytics">
     <h2>Statistics</h2>
