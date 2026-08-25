@@ -32,6 +32,19 @@ model Domain {
   createdBy    User?              @relation("DomainCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   memberships  DomainMembership[]
   links        ShortLink[]
+  aliases      DomainAlias[]
+  @@index([active])
+}
+
+model DomainAlias {
+  id        String   @id @default(cuid())
+  domainId  String
+  hostname  String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  domain    Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  @@index([domainId])
   @@index([active])
 }
 
