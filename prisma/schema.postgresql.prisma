@@ -8,15 +8,17 @@ datasource db {
 }
 
 model User {
-  id            String              @id @default(cuid())
-  username      String              @unique
-  passwordHash  String
-  role          String              @default("USER")
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  sessions      Session[]
-  memberships   DomainMembership[]
-  domainsCreated Domain[]           @relation("DomainCreatedBy")
+  id              String              @id @default(cuid())
+  username        String              @unique
+  passwordHash    String
+  role            String              @default("USER")
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  sessions        Session[]
+  links           ShortLink[]
+  collections     Collection[]
+  memberships     DomainMembership[]
+  domainsCreated  Domain[]            @relation("DomainCreatedBy")
 }
 
 model Domain {
@@ -29,6 +31,7 @@ model Domain {
   createdById  String?
   createdBy    User?              @relation("DomainCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   memberships  DomainMembership[]
+  links        ShortLink[]
   @@index([active])
 }
 
@@ -59,9 +62,12 @@ model Session {
 
 model ShortLink {
   id                    String   @id @default(cuid())
-  code                  String   @unique
+  domainId              String
+  code                  String
   codeType              String
   targetUrl             String
+  ownerId               String?
+  isPrivate             Boolean  @default(true)
   title                 String?
   description           String?
   canonicalUrl          String?
@@ -78,10 +84,28 @@ model ShortLink {
   clickCount            Int      @default(0)
   lastClickedAt         DateTime?
   active                Boolean  @default(true)
+  domain                Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  owner                 User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   jobs                  Job[]
 
+  @@unique([domainId, code])
+  @@index([domainId])
+  @@index([domainId, ownerId])
   @@index([expiresAt])
   @@index([active])
+}
+
+model Collection {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  ownerId     String
+  isPrivate   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  @@unique([ownerId, name])
+  @@index([ownerId])
 }
 
 model Job {
