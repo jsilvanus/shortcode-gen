@@ -32,17 +32,24 @@ Helper-level authorization tests cover the core matrix. Endpoint integration tes
 
 `lib/security/safe-fetch.ts` provides the worker fetch primitive with HTTP(S)-only URLs, allowed-domain validation, DNS/private-address checks, redirect revalidation, five-redirect limit, 8-second timeout, 1 MB response limit, and fail-closed address handling. IPv4/IPv6 private-address tests are included.
 
-The metadata worker implementation must be checked/wired to use `safeFetch()` before production, including appropriate content-type restrictions.
+The timed metadata refresh must use `safeFetch()`; this must remain covered by a worker integration test so future changes cannot reintroduce raw server-side `fetch()`.
+
+## Session and input hardening
+
+- Login rotates away the existing browser session before issuing a new session ID, reducing session accumulation and fixation risk.
+- Logout deletes the server-side session and clears the cookie.
+- Session cookies remain HTTP-only, `SameSite=Lax`, and `Secure` in production.
+- Link creation now has a strict Zod input schema, URL/code length limits, safe JSON parsing, and generic client-facing creation errors.
+- Link edit validation already rejects invalid TTLs and target URLs; remaining routes should receive the same strict-schema treatment.
 
 ## Remaining audit work
 
-1. Verify/wire metadata worker to `safeFetch()`.
-2. Replace process-local login throttling with shared production state.
-3. Verify session lifecycle, cookie settings, logout, and revocation.
-4. Audit input limits and error-message leakage.
-5. Run dependency/build/static checks.
-6. Final proxy/network/container hardening review.
-7. Add endpoint integration tests when the test harness can exercise Next.js handlers with a test database.
+1. Replace process-local login throttling with shared production state.
+2. Add worker integration tests proving timed metadata refresh uses `safeFetch()`.
+3. Audit remaining API input limits and error-message leakage.
+4. Run dependency/build/static checks.
+5. Final proxy/network/container hardening review.
+6. Add endpoint integration tests when the test harness can exercise Next.js handlers with a test database.
 
 ## Authorization matrix
 
