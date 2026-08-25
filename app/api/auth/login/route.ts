@@ -4,14 +4,9 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { createSession } from "@/lib/auth/session";
 
-const schema = z.object({
-  username: z.string().min(1).max(100),
-  password: z.string().min(1),
-});
-
+const schema = z.object({ username: z.string().min(1).max(100), password: z.string().min(1).max(1024) });
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 10;
-const attempts = new Map<string, { count: number; resetAt: number }>();
 
 function clientKey(request: Request, username: string) {
   const forwarded = request.headers.get("x-forwarded-for");
@@ -19,36 +14,43 @@ function clientKey(request: Request, username: string) {
   return `${ip}:${username.toLowerCase()}`;
 }
 
-function isRateLimited(key: string) {
-  const now = Date.now();
-  const entry = attempts.get(key);
-  if (!entry || entry.resetAt <= now) {
-    attempts.delete(key);
+async function isRateLimited(key: string) {
+  const entry = await db.loginAttempt.findUnique({ where: { key } });
+  if (!entry) return false;
+  if (entry.resetAt <= new Date()) {
+    await db.loginAttempt.delete({ where: { key } }).catch(() => undefined);
     return false;
   }
   return entry.count >= MAX_ATTEMPTS;
 }
 
-function recordFailure(key: string) {
-  const now = Date.now();
-  const entry = attempts.get(key);
-  if (!entry || entry.resetAt <= now) attempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
-  else entry.count++;
+async function recordFailure(key: string) {
+  const now = new Date();
+  const resetAt = new Date(now.getTime() + WINDOW_MS);
+  await db.loginAttempt.upsert({
+    where: { key },
+    create: { key, count: 1, resetAt },
+    update: { count: { increment: 1 } },
+  });
+}
+
+async function clearFailures(key: string) {
+  await db.loginAttempt.deleteMany({ where: { key } });
 }
 
 export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid credentials" }, { status: 400 });
   const key = clientKey(request, parsed.data.username);
-  if (isRateLimited(key)) return NextResponse.json({ error: "Too many login attempts" }, { status: 429, headers: { "Retry-After": "900" } });
+  if (await isRateLimited(key)) return NextResponse.json({ error: "Too many login attempts" }, { status: 429, headers: { "Retry-After": "900" } });
 
   const user = await db.user.findUnique({ where: { username: parsed.data.username } });
   if (!user || !(await argon2.verify(user.passwordHash, parsed.data.password))) {
-    recordFailure(key);
+    await recordFailure(key);
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
-  attempts.delete(key);
+  await clearFailures(key);
   await createSession(user.id);
   return NextResponse.json({ ok: true });
 }
