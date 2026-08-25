@@ -1,20 +1,23 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getCurrentDomainContext } from "@/lib/domain-context";
 import { db } from "@/lib/db";
 import { canViewLink } from "@/lib/auth/authorization";
 import { estimateHll, mergeHll, deserializeHll } from "@/lib/analytics/hll";
 
 export async function GET(request: Request) {
-  const user = await getCurrentUser();
+  const context = await getCurrentDomainContext();
+  const user = context.user;
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!context.membership) return NextResponse.json({ error: "Domain access required" }, { status: 403 });
   const url = new URL(request.url);
   const ids = [...new Set((url.searchParams.get("ids") ?? "").split(",").filter(Boolean))];
   if (!ids.length || ids.length > 100) return NextResponse.json({ error: "Select between 1 and 100 links" }, { status: 400 });
   const to = url.searchParams.get("to") ? new Date(url.searchParams.get("to")!) : new Date();
   const from = url.searchParams.get("from") ? new Date(url.searchParams.get("from")!) : new Date(to.getTime() - 30 * 86400000);
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from >= to) return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
-  const links = await db.shortLink.findMany({ where: { id: { in: ids } }, select: { id: true, ownerId: true, isPrivate: true } });
-  if (links.length !== ids.length || links.some(l => !canViewLink(user.role, l.ownerId, user.id, l.isPrivate))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const role = context.membership.role === "ADMIN" ? "ADMIN" : "USER";
+  const links = await db.shortLink.findMany({ where: { domainId: context.domain.id, id: { in: ids } }, select: { id: true, ownerId: true, isPrivate: true } });
+  if (links.length !== ids.length || links.some(l => !canViewLink(role, l.ownerId, user.id, l.isPrivate))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const linkIds = links.map(l => l.id);
   const daily = await db.linkDailyStat.findMany({ where: { shortLinkId: { in: linkIds }, date: { gte: from, lt: to } }, orderBy: { date: "asc" } });
   const monthly = await db.linkMonthlyStat.findMany({ where: { shortLinkId: { in: linkIds } } });
