@@ -1,0 +1,27 @@
+:root {
+  --background: #ffffff;
+  --primary: #6200ee;
+  --secondary: #03dac6;
+}
+
+:root[data-theme="dark"] {
+  --background: #121212;
+  --primary: #bb86fc;
+  --secondary: #03dac6;
+}
+
+:root[data-theme="contrast"] {
+  --background: #000000;
+  --primary: #ffffff;
+  --secondary: #ffff00;
+}
+
+html, body {
+  background: var(--background);
+}
+
+body {
+  color: var(--primary);
+}
+
+a { color: var(--secondary); }
