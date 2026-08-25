@@ -9,12 +9,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
   const context = await getCurrentDomainContext();
   const user = context.user;
   if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (user.role !== "ADMIN" && !context.membership) return NextResponse.json({ error: "Domain access required" }, { status: 403 });
+  if (!context.membership) return NextResponse.json({ error: "Domain access required" }, { status: 403 });
   const { code } = await params;
   const body = await request.json().catch(() => null);
   const link = await db.shortLink.findUnique({ where: { domainId_code: { domainId: context.domain.id, code: canonicalizeCode(code) } } });
   if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const role = user.role === "ADMIN" || context.membership?.role === "ADMIN" ? "ADMIN" : "USER";
+  const role = context.membership.role === "ADMIN" ? "ADMIN" : "USER";
   if (!canEditLink(role, link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   let targetUrl: string | undefined;
@@ -63,11 +63,11 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const context = await getCurrentDomainContext();
   const user = context.user;
   if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  if (user.role !== "ADMIN" && !context.membership) return NextResponse.json({ error: "Domain access required" }, { status: 403 });
+  if (!context.membership) return NextResponse.json({ error: "Domain access required" }, { status: 403 });
   const { code } = await params;
   const link = await db.shortLink.findUnique({ where: { domainId_code: { domainId: context.domain.id, code: canonicalizeCode(code) } } });
   if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const role = user.role === "ADMIN" || context.membership?.role === "ADMIN" ? "ADMIN" : "USER";
+  const role = context.membership.role === "ADMIN" ? "ADMIN" : "USER";
   if (!canEditLink(role, link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await db.shortLink.delete({ where: { id: link.id } });
   return new NextResponse(null, { status: 204 });
