@@ -19,6 +19,7 @@ export function validateExpiry(expiresAt: Date | null | undefined, settings: Awa
 }
 
 export async function createShortLink(input: {
+  domainId: string;
   targetUrl: string;
   ownerId: string;
   code?: string;
@@ -33,17 +34,17 @@ export async function createShortLink(input: {
   if (input.code && !validateCustomCode(input.code)) throw new Error("Invalid custom code");
   if (!input.code) {
     for (let attempt = 0; attempt < 10; attempt++) {
-      if (!(await db.shortLink.findUnique({ where: { code } }))) break;
+      if (!(await db.shortLink.findUnique({ where: { domainId_code: { domainId: input.domainId, code } } }))) break;
       code = generateCode();
     }
   }
-  const existing = await db.shortLink.findUnique({ where: { code } });
+  const existing = await db.shortLink.findUnique({ where: { domainId_code: { domainId: input.domainId, code } } });
   if (existing) throw new Error("Code already exists");
-  return db.shortLink.create({ data: { code, codeType: input.code ? "CUSTOM" : "GENERATED", targetUrl: url.toString(), ownerId: input.ownerId, isPrivate: input.isPrivate ?? settings.linkPolicy.defaultPrivate, expiresAt } });
+  return db.shortLink.create({ data: { domainId: input.domainId, code, codeType: input.code ? "CUSTOM" : "GENERATED", targetUrl: url.toString(), ownerId: input.ownerId, isPrivate: input.isPrivate ?? settings.linkPolicy.defaultPrivate, expiresAt } });
 }
 
-export async function getActiveLink(code: string) {
-  const link = await db.shortLink.findUnique({ where: { code: canonicalizeCode(code) } });
+export async function getActiveLink(domainId: string, code: string) {
+  const link = await db.shortLink.findUnique({ where: { domainId_code: { domainId, code: canonicalizeCode(code) } } });
   if (!link || !link.active || (link.expiresAt && link.expiresAt <= new Date())) return null;
   return link;
 }
