@@ -1,18 +1,24 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireCurrentDomainMembership } from "@/lib/domain-context";
 
 export default async function AdminDashboardPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/admin/login");
-  if (user.role !== "ADMIN") redirect("/dashboard");
+  let context;
+  try {
+    context = await requireCurrentDomainMembership();
+  } catch {
+    redirect("/admin/login");
+  }
+
+  const isAdmin = context.membership.role === "ADMIN";
 
   return (
     <main>
       <h1>Administration</h1>
-      <p>Signed in as {user.username}.</p>
+      <p>Signed in as {context.user.username}.</p>
+      <p>Domain: {context.domain.hostname}</p>
       <nav>
-        <a href="/dashboard">User dashboard</a>{" · "}
-        <a href="/admin/settings">Site settings</a>
+        <a href="/dashboard">User dashboard</a>
+        {isAdmin && <>{" · "}<a href="/admin/settings">Domain settings</a></>}
       </nav>
     </main>
   );
