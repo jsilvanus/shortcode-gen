@@ -61,7 +61,6 @@ export type SiteSettings = {
 export async function getSiteSettings(): Promise<SiteSettings> {
   const setting = await db.siteSetting.findUnique({ where: { key: SETTING_KEY } });
   if (!setting) return structuredClone(DEFAULT_SETTINGS) as SiteSettings;
-
   try {
     return mergeSettings(JSON.parse(setting.value) as Partial<SiteSettings>);
   } catch {
