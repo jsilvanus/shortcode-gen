@@ -87,3 +87,9 @@ See:
 - `docs/plan2.md` — deployment architecture
 
 Local development uses SQLite. Staging uses Docker Compose, PostgreSQL, and Nginx. Production uses Docker and Traefik with PostgreSQL supplied by the separate PostgreSQL project.
+
+The PostgreSQL schema and its migration history live under `prisma/postgresql/`, mirroring `prisma/schema.prisma`. Apply them with:
+
+```bash
+npm run db:deploy:postgresql
+```

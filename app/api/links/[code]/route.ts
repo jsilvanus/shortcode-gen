@@ -52,7 +52,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
     } });
     if (collectionIds) {
       await tx.linkCollection.deleteMany({ where: { shortLinkId: link.id } });
-      if (collectionIds.length) await tx.linkCollection.createMany({ data: collectionIds.map(collectionId => ({ shortLinkId: link.id, collectionId })), skipDuplicates: true });
+      if (collectionIds.length) await tx.linkCollection.createMany({ data: collectionIds.map(collectionId => ({ shortLinkId: link.id, collectionId })) });
     }
     return result;
   });

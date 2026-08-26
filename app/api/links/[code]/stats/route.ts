@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { canonicalizeCode } from "@/lib/links/codes";
 import { getCurrentDomainContext } from "@/lib/domain-context";
 import { canViewLink } from "@/lib/auth/authorization";
-import { estimateHll, mergeHll, deserializeHll } from "@/lib/analytics/hll";
+import { estimateHll, mergeHll, decodeHll } from "@/lib/hll";
 
 export async function GET(request: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
@@ -21,9 +21,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ code
   const exactViews = new Set(rawEvents.filter(e => e.eventType === "PAGE_VIEW").map(e => e.visitorHash)).size;
   const exactRedirects = new Set(rawEvents.filter(e => e.eventType === "REDIRECT").map(e => e.visitorHash)).size;
   const monthly = await db.linkMonthlyStat.findMany({ where: { shortLinkId: link.id }, orderBy: [{ year: "asc" }, { month: "asc" }] });
-  const hllViews = mergeHll(monthly.filter(m => m.year * 100 + m.month >= from.getUTCFullYear() * 100 + (from.getUTCMonth() + 1) && m.year * 100 + m.month <= to.getUTCFullYear() * 100 + (to.getUTCMonth() + 1)).map(m => deserializeHll(m.uniqueViewsHll)));
-  const hllRedirects = mergeHll(monthly.filter(m => m.year * 100 + m.month >= from.getUTCFullYear() * 100 + (from.getUTCMonth() + 1) && m.year * 100 + m.month <= to.getUTCFullYear() * 100 + (to.getUTCMonth() + 1)).map(m => deserializeHll(m.uniqueRedirectsHll)));
+  const hllViews = mergeHll(monthly.filter(m => m.year * 100 + m.month >= from.getUTCFullYear() * 100 + (from.getUTCMonth() + 1) && m.year * 100 + m.month <= to.getUTCFullYear() * 100 + (to.getUTCMonth() + 1)).map(m => decodeHll(m.uniqueViewsHll)));
+  const hllRedirects = mergeHll(monthly.filter(m => m.year * 100 + m.month >= from.getUTCFullYear() * 100 + (from.getUTCMonth() + 1) && m.year * 100 + m.month <= to.getUTCFullYear() * 100 + (to.getUTCMonth() + 1)).map(m => decodeHll(m.uniqueRedirectsHll)));
   const fullyRaw = to.getTime() <= Date.now() && from.getTime() >= Date.now() - 90 * 86400000;
   const totals = daily.reduce((a, d) => ({ pageViews: a.pageViews + d.pageViews, redirects: a.redirects + d.redirects }), { pageViews: 0, redirects: 0 });
-  return NextResponse.json({ from, to, exact: fullyRaw, totals: { ...totals, uniqueViews: fullyRaw ? exactViews : estimateHll(hllViews), uniqueRedirects: fullyRaw ? exactRedirects : estimateHll(hllRedirects) }, daily, monthly: monthly.map(m => ({ year: m.year, month: m.month, uniqueViews: estimateHll(deserializeHll(m.uniqueViewsHll)), uniqueRedirects: estimateHll(deserializeHll(m.uniqueRedirectsHll)) })) });
+  return NextResponse.json({ from, to, exact: fullyRaw, totals: { ...totals, uniqueViews: fullyRaw ? exactViews : estimateHll(hllViews), uniqueRedirects: fullyRaw ? exactRedirects : estimateHll(hllRedirects) }, daily, monthly: monthly.map(m => ({ year: m.year, month: m.month, uniqueViews: estimateHll(decodeHll(m.uniqueViewsHll)), uniqueRedirects: estimateHll(decodeHll(m.uniqueRedirectsHll)) })) });
 }

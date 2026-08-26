@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentDomainContext } from "@/lib/domain-context";
-import { mergeHll, estimateHll, deserializeHll } from "@/lib/analytics/hll";
+import { mergeHll, estimateHll, decodeHll } from "@/lib/hll";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -30,11 +30,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const firstMonth = from.getUTCFullYear() * 100 + from.getUTCMonth() + 1;
   const lastMonth = to.getUTCFullYear() * 100 + to.getUTCMonth() + 1;
   const relevant = monthly.filter(m => { const key = m.year * 100 + m.month; return key >= firstMonth && key <= lastMonth; });
-  const uniqueViews = estimateHll(mergeHll(relevant.map(m => deserializeHll(m.uniqueViewsHll))));
-  const uniqueRedirects = estimateHll(mergeHll(relevant.map(m => deserializeHll(m.uniqueRedirectsHll))));
+  const uniqueViews = estimateHll(mergeHll(relevant.map(m => decodeHll(m.uniqueViewsHll))));
+  const uniqueRedirects = estimateHll(mergeHll(relevant.map(m => decodeHll(m.uniqueRedirectsHll))));
   const dailySeries = Object.values(daily.reduce<Record<string, { date: string; pageViews: number; redirects: number }>>((acc, d) => {
     const key = d.date.toISOString().slice(0, 10); const current = acc[key] ?? { date: key, pageViews: 0, redirects: 0 };
     current.pageViews += d.pageViews; current.redirects += d.redirects; acc[key] = current; return acc;
   }, {})).sort((a, b) => a.date.localeCompare(b.date));
-  return NextResponse.json({ collectionId: id, from, to, exact: false, linkCount: ids.length, totals: { ...totals, uniqueViews, uniqueRedirects }, daily: dailySeries, monthly: relevant.map(m => ({ year: m.year, month: m.month, uniqueViews: estimateHll(deserializeHll(m.uniqueViewsHll)), uniqueRedirects: estimateHll(deserializeHll(m.uniqueRedirectsHll)) })) });
+  return NextResponse.json({ collectionId: id, from, to, exact: false, linkCount: ids.length, totals: { ...totals, uniqueViews, uniqueRedirects }, daily: dailySeries, monthly: relevant.map(m => ({ year: m.year, month: m.month, uniqueViews: estimateHll(decodeHll(m.uniqueViewsHll)), uniqueRedirects: estimateHll(decodeHll(m.uniqueRedirectsHll)) })) });
 }
