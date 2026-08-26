@@ -10,6 +10,13 @@ export async function getRequestHostname(): Promise<string> {
   return host;
 }
 
+export async function getRequestOrigin(hostname: string): Promise<string> {
+  const requestHeaders = await headers();
+  const forwardedProto = requestHeaders.get("x-forwarded-proto")?.split(",", 1)[0]?.trim();
+  const protocol = forwardedProto || (process.env.NODE_ENV === "production" ? "https" : "http");
+  return `${protocol}://${hostname}`;
+}
+
 export async function getCurrentDomain() {
   const hostname = await getRequestHostname();
   const domain = await getActiveDomainByHostname(hostname);
