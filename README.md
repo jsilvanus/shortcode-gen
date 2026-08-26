@@ -1,6 +1,6 @@
 # Shortcode Gen
 
-Self-hosted short-link service with optional human-readable codes, link expiration, metadata previews, and asynchronous metadata fetching.
+Self-hosted, multi-domain short-link service with human-readable codes, link expiration, metadata previews, asynchronous metadata/rendering jobs, QR codes, collections, analytics, API access, audit logging, and MCP access.
 
 ## Development
 
@@ -16,7 +16,7 @@ npm run dev
 
 The application is available at `http://localhost:3000`.
 
-The worker is started separately when implementing background metadata processing:
+Run the background worker separately when needed:
 
 ```bash
 npm run worker
@@ -79,17 +79,36 @@ https://short.example/ilmo
 
 Application routes such as `/admin`, `/api`, and `/health` are reserved.
 
+## Documentation
+
+Current documentation:
+
+- `docs/architecture.md` — current system architecture
+- `docs/features.md` — implemented/partial/planned feature inventory
+- `docs/roadmap.md` — current gaps and future work
+- `docs/data-inventory.md` — privacy-oriented data inventory
+- `docs/privacy.md` — privacy/data-protection engineering assessment
+- `docs/security.md` — security architecture and assessment
+- `docs/privacy-security-assessment.md` — GDPR/ISO-oriented self-assessment
+- `docs/operations.md` — deployment and operations
+- `docs/api.md` — API overview
+- `docs/mcp.md` — MCP overview
+- `docs/documentation-status.md` — documentation maintenance rules
+
+Historical plans are retained separately. `docs/first-plan.md` marks the original plan as historical; `docs/technical-plan.md` and `docs/plan2.md` are also retained for architectural history.
+
 ## Deployment
 
-See:
+Local development uses SQLite. Staging uses Docker Compose and PostgreSQL. Production uses Docker and Traefik with PostgreSQL supplied by the separate PostgreSQL project.
 
-- `docs/technical-plan.md` — implementation architecture and phases
-- `docs/plan2.md` — deployment architecture
-
-Local development uses SQLite. Staging uses Docker Compose, PostgreSQL, and Nginx. Production uses Docker and Traefik with PostgreSQL supplied by the separate PostgreSQL project.
-
-The PostgreSQL schema and its migration history live under `prisma/postgresql/`, mirroring `prisma/schema.prisma`. Apply them with:
+The PostgreSQL schema and its migration history live under `prisma/postgresql/`. Apply them with:
 
 ```bash
 npm run db:deploy:postgresql
 ```
+
+See `docs/operations.md` for the current operational model.
+
+## Assurance status
+
+The project contains meaningful security and privacy engineering controls, but it does **not** claim GDPR compliance certification, ISO/IEC 27001 certification, ISO/IEC 27701 certification, or an independent penetration/privacy audit. See `docs/privacy-security-assessment.md`.
