@@ -10,7 +10,7 @@ export default async function DomainPage() {
 
   const [aliases, memberships] = await Promise.all([
     db.domainAlias.findMany({ where: { domainId: context.domain.id, active: true }, select: { hostname: true }, orderBy: { hostname: "asc" } }),
-    db.domainMembership.findMany({ where: { domainId: context.domain.id }, include: { user: { select: { id: true, email: true, name: true } } }, orderBy: { createdAt: "asc" } }),
+    db.domainMembership.findMany({ where: { domainId: context.domain.id }, include: { user: { select: { id: true, username: true } } }, orderBy: { createdAt: "asc" } }),
   ]);
 
   return (
@@ -19,7 +19,7 @@ export default async function DomainPage() {
       <h1>{context.domain.name}</h1>
       <p>Canonical hostname: {context.domain.hostname}</p>
       <h2>Users</h2>
-      <ul>{memberships.map(m => <li key={m.user.id}>{m.user.name || m.user.email} — {m.role}</li>)}</ul>
+      <ul>{memberships.map(m => <li key={m.user.id}>{m.user.username} — {m.role}</li>)}</ul>
       <h2>Aliases</h2>
       {aliases.length ? <ul>{aliases.map(a => <li key={a.hostname}>{a.hostname}</li>)}</ul> : <p>No aliases configured.</p>}
     </main>

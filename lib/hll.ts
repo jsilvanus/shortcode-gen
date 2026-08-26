@@ -20,10 +20,12 @@ export function addHll(registers: Uint8Array, value: string): void {
   if (rank > registers[bucket]) registers[bucket] = Math.min(rank, 63);
 }
 
-export function mergeHll(a: Uint8Array, b: Uint8Array): Uint8Array {
-  if (a.length !== REGISTER_COUNT || b.length !== REGISTER_COUNT) throw new Error("Invalid HLL");
+export function mergeHll(registers: Uint8Array[]): Uint8Array {
   const out = new Uint8Array(REGISTER_COUNT);
-  for (let i = 0; i < REGISTER_COUNT; i++) out[i] = Math.max(a[i], b[i]);
+  for (const r of registers) {
+    if (r.length !== REGISTER_COUNT) throw new Error("Invalid HLL");
+    for (let i = 0; i < REGISTER_COUNT; i++) out[i] = Math.max(out[i], r[i]);
+  }
   return out;
 }
 

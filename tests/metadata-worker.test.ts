@@ -1,50 +1,90 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const safeFetch = vi.fn();
 const jobFindUnique = vi.fn();
-const shortLinkUpdate = vi.fn();
 const jobUpdate = vi.fn();
+const shortLinkUpdate = vi.fn();
+const getDomainSettings = vi.fn();
+const assertSafeUrl = vi.fn();
+const mkdir = vi.fn();
+const rename = vi.fn();
 
-vi.mock("@/lib/security/safe-fetch", () => ({ safeFetch }));
 vi.mock("@/lib/db", () => ({ db: { job: { findUnique: jobFindUnique, update: jobUpdate }, shortLink: { update: shortLinkUpdate } } }));
+vi.mock("@/lib/settings", () => ({ getDomainSettings }));
+vi.mock("@/lib/security/safe-fetch", () => ({ assertSafeUrl, safeFetch: vi.fn() }));
+vi.mock("node:fs/promises", () => ({ mkdir, rename }));
+
+function fakePage() {
+  return {
+    setDefaultNavigationTimeout: vi.fn(),
+    goto: vi.fn().mockResolvedValue(undefined),
+    waitForTimeout: vi.fn().mockResolvedValue(undefined),
+    evaluate: vi.fn().mockResolvedValue({
+      title: "Example",
+      description: null,
+      imageUrl: null,
+      canonicalUrl: null,
+      faviconUrl: "/favicon.ico",
+      finalUrl: "https://allowed.example/page",
+    }),
+    screenshot: vi.fn().mockResolvedValue(undefined),
+  };
+}
 
 describe("metadata worker SSRF boundary", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("uses safeFetch for the scheduled metadata job", async () => {
-    safeFetch.mockResolvedValue({
-      finalUrl: "https://allowed.example/page",
-      response: new Response("<html><head><title>Example</title></head><body></body></html>", { headers: { "content-type": "text/html" } }),
-      body: new TextEncoder().encode("<html><head><title>Example</title></head><body></body></html>"),
-    });
+  it("renders an allowed target only after the SSRF check passes", async () => {
+    getDomainSettings.mockResolvedValue({ linkPolicy: { allowedDomains: ["allowed.example"] } });
+    assertSafeUrl.mockResolvedValue(undefined);
     jobFindUnique.mockResolvedValue({
       id: "job-1", type: "METADATA", attempts: 0, shortLinkId: "link-1",
-      shortLink: { id: "link-1", targetUrl: "https://allowed.example/page" },
+      shortLink: { id: "link-1", domainId: "domain-1", targetUrl: "https://allowed.example/page" },
+    });
+    jobUpdate.mockResolvedValue({});
+    shortLinkUpdate.mockResolvedValue({});
+    mkdir.mockResolvedValue(undefined);
+    rename.mockResolvedValue(undefined);
+
+    const page = fakePage();
+    const context = { route: vi.fn(), newPage: vi.fn().mockResolvedValue(page), close: vi.fn() };
+    const browser = { newContext: vi.fn().mockResolvedValue(context) };
+
+    const { processMetadataJob } = await import("@/lib/metadata-worker");
+    await processMetadataJob("job-1", browser as never);
+
+    expect(assertSafeUrl).toHaveBeenCalledWith("https://allowed.example/page", ["allowed.example"]);
+    expect(context.route).toHaveBeenCalledWith("**/*", expect.any(Function));
+    expect(shortLinkUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "link-1" },
+      data: expect.objectContaining({ renderStatus: "completed", renderError: null }),
+    }));
+    expect(jobUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "completed" }),
+    }));
+  });
+
+  it("does not open a browser context for a target that fails the SSRF check", async () => {
+    getDomainSettings.mockResolvedValue({ linkPolicy: { allowedDomains: ["allowed.example"] } });
+    assertSafeUrl.mockRejectedValue(new Error("Target resolves to a private or reserved address"));
+    jobFindUnique.mockResolvedValue({
+      id: "job-2", type: "METADATA", attempts: 0, shortLinkId: "link-2",
+      shortLink: { id: "link-2", domainId: "domain-1", targetUrl: "https://allowed.example/redirect-to-private" },
     });
     jobUpdate.mockResolvedValue({});
     shortLinkUpdate.mockResolvedValue({});
 
-    const { processMetadataJob } = await import("@/lib/metadata-worker");
-    await processMetadataJob("job-1");
-
-    expect(safeFetch).toHaveBeenCalledWith("https://allowed.example/page", { maxBytes: 1_000_000 });
-    expect(shortLinkUpdate).toHaveBeenCalled();
-    expect(jobUpdate).toHaveBeenCalled();
-  });
-
-  it("does not bypass the fetch boundary for a redirect target", async () => {
-    safeFetch.mockRejectedValue(new Error("Blocked private address"));
-    jobFindUnique.mockResolvedValue({
-      id: "job-2", type: "METADATA", attempts: 0, shortLinkId: "link-2",
-      shortLink: { id: "link-2", targetUrl: "https://allowed.example/redirect" },
-    });
-    jobUpdate.mockResolvedValue({});
+    const browser = { newContext: vi.fn() };
 
     const { processMetadataJob } = await import("@/lib/metadata-worker");
-    await processMetadataJob("job-2");
+    await processMetadataJob("job-2", browser as never);
 
-    expect(safeFetch).toHaveBeenCalledTimes(1);
-    expect(shortLinkUpdate).not.toHaveBeenCalled();
-    expect(jobUpdate).toHaveBeenCalled();
+    expect(assertSafeUrl).toHaveBeenCalledTimes(1);
+    expect(browser.newContext).not.toHaveBeenCalled();
+    expect(shortLinkUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ renderError: "Target resolves to a private or reserved address" }),
+    }));
+    expect(jobUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "pending" }),
+    }));
   });
 });

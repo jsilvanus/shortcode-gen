@@ -27,11 +27,11 @@ export async function requireCurrentDomainMembership() {
   const context = await getCurrentDomainContext();
   if (!context.user) throw new Error("AUTHENTICATION_REQUIRED");
   if (!context.membership) throw new Error("DOMAIN_ACCESS_REQUIRED");
-  return context;
+  return { domain: context.domain, user: context.user, membership: context.membership };
 }
 
 export async function requireCurrentDomainAdmin() {
   const context = await requireCurrentDomainMembership();
-  if (context.membership?.role !== "ADMIN") throw new Error("DOMAIN_ADMIN_REQUIRED");
+  if (context.membership.role !== "ADMIN") throw new Error("DOMAIN_ADMIN_REQUIRED");
   return context;
 }

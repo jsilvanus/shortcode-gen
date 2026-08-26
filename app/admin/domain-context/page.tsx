@@ -16,14 +16,14 @@ export default async function DomainContextPage() {
   return (
     <main>
       <h1>Domain</h1>
-      <DomainContextNav hostname={context.domain.hostname} aliases={aliases.map(a => a.hostname)} role={context.membership.role} />
+      <DomainContextNav hostname={context.domain.hostname} aliases={aliases.map(a => a.hostname)} role={context.membership.role === "ADMIN" ? "ADMIN" : "USER"} />
       <section>
         <h2>{context.domain.name}</h2>
         <p>Canonical hostname: {context.domain.hostname}</p>
         {aliases.length > 0 && (
           <>
             <h3>Aliases</h3>
-            <ul>{aliases.map(alias => <li key={alias}>{alias}</li>)}</ul>
+            <ul>{aliases.map(alias => <li key={alias.hostname}>{alias.hostname}</li>)}</ul>
           </>
         )}
       </section>

@@ -165,13 +165,13 @@ npx prisma migrate dev
 Staging:
 
 ```bash
-npx prisma migrate deploy
+npx prisma migrate deploy --schema=prisma/postgresql/schema.prisma
 ```
 
 Production:
 
 ```bash
-npx prisma migrate deploy
+npx prisma migrate deploy --schema=prisma/postgresql/schema.prisma
 ```
 
 Production must never use `prisma db push` for schema deployment.

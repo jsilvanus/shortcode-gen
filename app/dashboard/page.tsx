@@ -10,12 +10,13 @@ export default async function UserDashboardPage() {
   if (!context.user) redirect("/admin/login");
   if (!context.membership) redirect("/admin/login");
 
+  const user = context.user;
   const isDomainAdmin = context.membership.role === "ADMIN";
   const [links, collections] = await Promise.all([
     db.shortLink.findMany({
       where: {
         domainId: context.domain.id,
-        OR: [{ ownerId: context.user.id }, { isPrivate: false }],
+        OR: [{ ownerId: user.id }, { isPrivate: false }],
       },
       select: {
         id: true,
@@ -34,14 +35,14 @@ export default async function UserDashboardPage() {
     db.collection.findMany({
       where: {
         domainId: context.domain.id,
-        OR: [{ ownerId: context.user.id }, { isPrivate: false }],
+        OR: [{ ownerId: user.id }, { isPrivate: false }],
       },
       select: { id: true, name: true, description: true, isPrivate: true, ownerId: true },
       orderBy: { name: "asc" },
     }),
   ]);
 
-  const manageableCollections = collections.filter(c => c.ownerId === context.user.id || isDomainAdmin);
+  const manageableCollections = collections.filter(c => c.ownerId === user.id || isDomainAdmin);
   const linkOptions = links.map(l => ({
     ...l,
     expiresAt: l.expiresAt?.toISOString() ?? null,
@@ -51,7 +52,7 @@ export default async function UserDashboardPage() {
   return (
     <main>
       <h1>My links</h1>
-      <p>Signed in as {context.user.username}.</p>
+      <p>Signed in as {user.username}.</p>
       <p>Domain: {context.domain.hostname}</p>
       <CollectionManager initial={manageableCollections} />
       <section style={{ marginTop: 32 }} aria-labelledby="link-management-title">
@@ -59,7 +60,7 @@ export default async function UserDashboardPage() {
         <LinkManager
           initial={linkOptions.map(l => ({
             ...l,
-            canEdit: isDomainAdmin || l.ownerId === context.user!.id || !l.isPrivate,
+            canEdit: isDomainAdmin || l.ownerId === user.id || !l.isPrivate,
           }))}
           collections={manageableCollections}
         />

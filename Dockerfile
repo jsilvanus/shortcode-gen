@@ -7,7 +7,7 @@ RUN npm install
 RUN npx playwright install --with-deps chromium
 
 COPY . .
-RUN npx prisma generate
+RUN npx prisma generate --schema=prisma/postgresql/schema.prisma
 RUN npm run build
 
 ENV NODE_ENV=production

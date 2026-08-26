@@ -13,12 +13,17 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
+    "db:generate:postgresql": "prisma generate --schema=prisma/postgresql/schema.prisma",
+    "db:migrate:postgresql": "prisma migrate dev --schema=prisma/postgresql/schema.prisma",
+    "db:deploy:postgresql": "prisma migrate deploy --schema=prisma/postgresql/schema.prisma",
     "bootstrap-domain": "tsx scripts/bootstrap-domain.ts",
     "domain": "tsx scripts/domain.ts",
     "create-user": "tsx scripts/create-user.ts",
     "worker": "tsx worker/index.ts"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^7.3.1",
     "@mui/material": "^7.3.1",
     "@prisma/client": "^6.14.0",
@@ -34,7 +39,13 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "prisma": "^6.14.0",
     "tsx": "^4.20.3",
+    "typescript": "^5.7.3",
     "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "postcss": "^8.5.26",
+    "deepmerge-ts": "^8.0.2"
   }
 }

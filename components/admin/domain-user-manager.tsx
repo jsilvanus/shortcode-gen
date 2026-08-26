@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-type Member = { user: { id: string; email: string; name: string | null }; role: "USER" | "ADMIN" };
+type Member = { user: { id: string; username: string }; role: "USER" | "ADMIN" };
 
 export function DomainUserManager({ domainId, initialUsers }: { domainId: string; initialUsers: Member[] }) {
   const [users, setUsers] = useState(initialUsers);
@@ -18,7 +18,7 @@ export function DomainUserManager({ domainId, initialUsers }: { domainId: string
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Unable to update user");
       const member = data.user as Member;
-      setUsers(current => [...current.filter(m => m.user.id !== member.user.id), member].sort((a, b) => (a.user.name || a.user.email).localeCompare(b.user.name || b.user.email)));
+      setUsers(current => [...current.filter(m => m.user.id !== member.user.id), member].sort((a, b) => a.user.username.localeCompare(b.user.username)));
       setUserId("");
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to update user"); }
     finally { setBusy(false); }
@@ -43,6 +43,6 @@ export function DomainUserManager({ domainId, initialUsers }: { domainId: string
       <button type="submit" disabled={busy}>Add / update</button>
     </form>
     {error && <p role="alert">{error}</p>}
-    <table><thead><tr><th>User</th><th>Role</th><th /></tr></thead><tbody>{users.map(member => <tr key={member.user.id}><td>{member.user.name || member.user.email}</td><td>{member.role}</td><td><button type="button" onClick={() => remove(member.user.id)} disabled={busy}>Remove</button></td></tr>)}</tbody></table>
+    <table><thead><tr><th>User</th><th>Role</th><th /></tr></thead><tbody>{users.map(member => <tr key={member.user.id}><td>{member.user.username}</td><td>{member.role}</td><td><button type="button" onClick={() => remove(member.user.id)} disabled={busy}>Remove</button></td></tr>)}</tbody></table>
   </section>;
 }
