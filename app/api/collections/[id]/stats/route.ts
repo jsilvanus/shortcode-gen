@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentDomainContext } from "@/lib/domain-context";
 import { mergeHll, estimateHll, decodeHll, emptyHll } from "@/lib/hll";
-import { suppressSmallCount, monthlyUniqueViews, monthlyUniqueRedirects } from "@/lib/analytics";
+import { suppressSmallCount, monthlyUniqueViews, monthlyUniqueRedirects, monthOverlapsRange } from "@/lib/analytics";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -29,9 +29,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     db.linkMonthlyStat.findMany({ where: { shortLinkId: { in: ids } }, orderBy: [{ year: "asc" }, { month: "asc" }] }),
   ]);
   const totals = daily.reduce((a, d) => ({ pageViews: a.pageViews + d.pageViews, redirects: a.redirects + d.redirects }), { pageViews: 0, redirects: 0 });
-  const firstMonth = from.getUTCFullYear() * 100 + from.getUTCMonth() + 1;
-  const lastMonth = to.getUTCFullYear() * 100 + to.getUTCMonth() + 1;
-  const relevant = monthly.filter(m => { const key = m.year * 100 + m.month; return key >= firstMonth && key <= lastMonth; });
+  const relevant = monthly.filter(m => monthOverlapsRange(m.year, m.month, from, to));
   // Live months merge into an exact union; a collapsed month (see collapseExpiredYearlyHll) only
   // has a scalar left, so it's summed in as an approximation instead.
   const live = relevant.filter(m => m.uniqueViewsHll || m.uniqueRedirectsHll);

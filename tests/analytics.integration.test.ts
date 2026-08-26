@@ -29,11 +29,10 @@ describe("yearly HLL collapse", () => {
     });
     await db.linkMonthlyStat.create({ data: { shortLinkId: link.id, year: pastYear, month: 1, uniqueViewsHll: encodeHll(sketchFor(janHashes)), uniqueRedirectsHll: encodeHll(emptyHll()) } });
     await db.linkMonthlyStat.create({ data: { shortLinkId: link.id, year: pastYear, month: 2, uniqueViewsHll: encodeHll(sketchFor(febHashes)), uniqueRedirectsHll: encodeHll(emptyHll()) } });
-    // Deliberately not January: a "whole past year" query's exclusive `to` (Jan 1 of the next
-    // year) lands exactly at this month's own boundary, and the existing month-key range filter
-    // (inherited, unrelated to this feature) already treats "to"'s own month as in-range — so
-    // parking the live fixture in June avoids that pre-existing edge rather than tripping over it.
-    await db.linkMonthlyStat.create({ data: { shortLinkId: link.id, year: currentYear, month: 6, uniqueViewsHll: encodeHll(sketchFor(["visitor-live"])), uniqueRedirectsHll: encodeHll(emptyHll()) } });
+    // Live January of the *next* year, right at the boundary a "whole past year" query's
+    // exclusive `to` (Jan 1 of that next year) sits on — this is exactly the case
+    // monthOverlapsRange must exclude; see the boundary test below.
+    await db.linkMonthlyStat.create({ data: { shortLinkId: link.id, year: currentYear, month: 1, uniqueViewsHll: encodeHll(sketchFor(["visitor-live"])), uniqueRedirectsHll: encodeHll(emptyHll()) } });
   });
 
   afterAll(async () => {
@@ -56,7 +55,7 @@ describe("yearly HLL collapse", () => {
     expect(jan?.uniqueViewsEstimate).toBe(estimateHll(sketchFor(janHashes)));
 
     // The current year's month is still live — collapse must never touch it.
-    const liveMonth = await db.linkMonthlyStat.findUnique({ where: { shortLinkId_year_month: { shortLinkId: link.id, year: currentYear, month: 6 } } });
+    const liveMonth = await db.linkMonthlyStat.findUnique({ where: { shortLinkId_year_month: { shortLinkId: link.id, year: currentYear, month: 1 } } });
     expect(liveMonth?.uniqueViewsHll).not.toBeNull();
   });
 
@@ -67,16 +66,16 @@ describe("yearly HLL collapse", () => {
     expect(after?.uniqueViews).toBe(before?.uniqueViews);
   });
 
-  it("uses the exact yearly union for a range covering the whole closed year", async () => {
+  it("uses the exact yearly union for a range covering the whole closed year, excluding the next year's live January", async () => {
+    // A "whole past year" range's exclusive `to` (Jan 1 of the next year) sits exactly at the
+    // start of next January, which has live (uncollapsed) data of its own — the fix under test is
+    // that this boundary month must not bleed into the previous year's total.
     const expectedYearlyUnique = estimateHll(mergeHll([sketchFor(janHashes), sketchFor(febHashes)]));
     const result = await estimateLinkUniqueRange(link.id, new Date(Date.UTC(pastYear, 0, 1)), new Date(Date.UTC(pastYear + 1, 0, 1)));
     expect(result.uniqueViews).toBe(expectedYearlyUnique);
   });
 
   it("falls back to a single month's scalar for a partial slice of a closed year", async () => {
-    // Stays within January so only that one month's key matches — a range whose "to" falls in
-    // February would (correctly, matching how monthly rows are always whole-month) also pull in
-    // February's collapsed scalar.
     const result = await estimateLinkUniqueRange(link.id, new Date(Date.UTC(pastYear, 0, 1)), new Date(Date.UTC(pastYear, 0, 20)));
     expect(result.uniqueViews).toBe(estimateHll(sketchFor(janHashes)));
   });

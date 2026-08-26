@@ -107,6 +107,19 @@ export async function collapseExpiredYearlyHll(now = new Date()): Promise<number
   return byLinkYear.size;
 }
 
+/**
+ * Whether calendar month `year`-`month` overlaps the half-open range [from, to) — the range
+ * convention used elsewhere in this app (e.g. LinkDailyStat queries use `date: { gte: from, lt:
+ * to } }`). A plain `year*100+month` comparison against `to`'s own year/month incorrectly treats
+ * a `to` that lands exactly at a month's start (midnight on the 1st) as still including that
+ * whole month, even though no instant within it is actually in range.
+ */
+export function monthOverlapsRange(year: number, month: number, from: Date, to: Date): boolean {
+  const monthStart = Date.UTC(year, month - 1, 1);
+  const monthEnd = Date.UTC(year, month, 1);
+  return monthStart < to.getTime() && monthEnd > from.getTime();
+}
+
 type MonthlyHllRow = { uniqueViewsHll: string | null; uniqueRedirectsHll: string | null; uniqueViewsEstimate: number | null; uniqueRedirectsEstimate: number | null };
 
 /** A month's unique-views estimate, from the live sketch if still present, else the scalar left behind by collapseExpiredYearlyHll. */
@@ -128,10 +141,8 @@ export function monthlyUniqueRedirects(m: MonthlyHllRow): number {
  * year, where the underlying sketch no longer exists to merge exactly.
  */
 export async function estimateLinkUniqueRange(shortLinkId: string, from: Date, to: Date): Promise<{ uniqueViews: number; uniqueRedirects: number }> {
-  const fromKey = from.getUTCFullYear() * 100 + (from.getUTCMonth() + 1);
-  const toKey = to.getUTCFullYear() * 100 + (to.getUTCMonth() + 1);
   const monthly = await db.linkMonthlyStat.findMany({ where: { shortLinkId } });
-  const inRange = monthly.filter(m => { const key = m.year * 100 + m.month; return key >= fromKey && key <= toKey; });
+  const inRange = monthly.filter(m => monthOverlapsRange(m.year, m.month, from, to));
   const live = inRange.filter(m => m.uniqueViewsHll || m.uniqueRedirectsHll);
   const collapsed = inRange.filter(m => !m.uniqueViewsHll && !m.uniqueRedirectsHll);
 

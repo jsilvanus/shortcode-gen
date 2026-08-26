@@ -3,7 +3,7 @@ import { getCurrentDomainContext } from "@/lib/domain-context";
 import { db } from "@/lib/db";
 import { canViewLink } from "@/lib/auth/authorization";
 import { estimateHll, mergeHll, decodeHll, emptyHll } from "@/lib/hll";
-import { suppressSmallCount, monthlyUniqueViews, monthlyUniqueRedirects } from "@/lib/analytics";
+import { suppressSmallCount, monthlyUniqueViews, monthlyUniqueRedirects, monthOverlapsRange } from "@/lib/analytics";
 
 export async function GET(request: Request) {
   const context = await getCurrentDomainContext();
@@ -26,9 +26,7 @@ export async function GET(request: Request) {
   const monthly = await db.linkMonthlyStat.findMany({ where: { shortLinkId: { in: linkIds } } });
   const dailyMap = new Map<string, { pageViews: number; redirects: number }>();
   for (const d of daily) { const v = dailyMap.get(d.date.toISOString()) ?? { pageViews: 0, redirects: 0 }; v.pageViews += d.pageViews; v.redirects += d.redirects; dailyMap.set(d.date.toISOString(), v); }
-  const firstMonth = from.getUTCFullYear() * 12 + from.getUTCMonth();
-  const lastMonth = to.getUTCFullYear() * 12 + to.getUTCMonth();
-  const relevant = monthly.filter(m => { const n = m.year * 12 + (m.month - 1); return n >= firstMonth && n <= lastMonth; });
+  const relevant = monthly.filter(m => monthOverlapsRange(m.year, m.month, from, to));
   // Live (still-HLL) months merge into an exact cross-link, cross-month union as before; any
   // month a past year's worth of sketches has already been collapsed into (see
   // collapseExpiredYearlyHll) only has a scalar left, so it can only be summed in — an
