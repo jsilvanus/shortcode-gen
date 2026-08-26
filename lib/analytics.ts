@@ -4,15 +4,20 @@ import { addHll, decodeHll, emptyHll, encodeHll } from "@/lib/hll";
 
 export type VisitEventType = "PAGE_VIEW" | "REDIRECT";
 
-function visitorHash(ip: string, userAgent: string, year: number): string {
+// Scoped per link (not just per year+ip+useragent) so the same visitor hashes differently on
+// every link — without this, one person's hash was stable across every link and domain in the
+// deployment for up to a year, letting anyone with the hashes correlate which links a single
+// visitor opened. Per-link scoping confines a hash to "did this visitor hit this link", not
+// "everything this visitor did across the whole site".
+function visitorHash(shortLinkId: string, ip: string, userAgent: string, year: number): string {
   const secret = process.env.ANALYTICS_HASH_SECRET;
   if (!secret) throw new Error("ANALYTICS_HASH_SECRET is required");
-  return createHmac("sha256", secret).update(`${year}\n${ip}\n${userAgent}`).digest("hex");
+  return createHmac("sha256", secret).update(`${year}\n${shortLinkId}\n${ip}\n${userAgent}`).digest("hex");
 }
 
 export async function recordVisit(input: { shortLinkId: string; eventType: VisitEventType; ip: string; userAgent: string }) {
   const year = new Date().getUTCFullYear();
-  return db.linkVisit.create({ data: { shortLinkId: input.shortLinkId, eventType: input.eventType, visitorHash: visitorHash(input.ip, input.userAgent, year) } });
+  return db.linkVisit.create({ data: { shortLinkId: input.shortLinkId, eventType: input.eventType, visitorHash: visitorHash(input.shortLinkId, input.ip, input.userAgent, year) } });
 }
 
 export async function aggregateVisits(endOfDay: Date) {

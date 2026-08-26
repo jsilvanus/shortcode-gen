@@ -14,7 +14,7 @@ export function DomainContextNav({
   const pathname = usePathname();
   const links = [
     ["Links", "/links"],
-    ...(role === "ADMIN" ? [["Users", "/admin/users"], ["Aliases", "/admin/aliases"], ["Settings", "/admin/settings"]] : []),
+    ...(role === "ADMIN" ? [["Users", "/admin/users"], ["Aliases", "/admin/aliases"], ["Settings", "/admin/settings"], ["Reports", "/admin/complaints"]] : []),
   ] as const;
 
   return (

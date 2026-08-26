@@ -10,7 +10,7 @@ import QrCode2Icon from "@mui/icons-material/QrCode2";
 import { Alert, Autocomplete, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, Stack, Switch, TextField, Typography } from "@mui/material";
 
 type Collection = { id: string; name: string; isPrivate: boolean };
-type Link = { id: string; code: string; title?: string | null; targetUrl: string; description?: string | null; isPrivate: boolean; active: boolean; expiresAt?: string | null; collectionIds: string[]; canEdit: boolean };
+type Link = { id: string; code: string; title?: string | null; targetUrl: string; description?: string | null; isPrivate: boolean; active: boolean; expiresAt?: string | null; collectionIds: string[]; canEdit: boolean; screenshotDisabled: boolean; redirectDelaySeconds: number | null };
 
 export function LinkManager({ initial, collections }: { initial: Link[]; collections: Collection[] }) {
   const [links, setLinks] = useState(initial);
@@ -21,6 +21,8 @@ export function LinkManager({ initial, collections }: { initial: Link[]; collect
   const [expiresAt, setExpiresAt] = useState("");
   const [isPrivate, setIsPrivate] = useState(true);
   const [active, setActive] = useState(true);
+  const [screenshotDisabled, setScreenshotDisabled] = useState(false);
+  const [redirectDelaySeconds, setRedirectDelaySeconds] = useState("");
   const [selectedCollections, setSelectedCollections] = useState<Collection[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [qrLink, setQrLink] = useState<Link | null>(null);
@@ -28,15 +30,17 @@ export function LinkManager({ initial, collections }: { initial: Link[]; collect
   function open(link: Link) {
     setEditing(link); setTargetUrl(link.targetUrl); setTitle(link.title ?? ""); setDescription(link.description ?? "");
     setExpiresAt(link.expiresAt ? new Date(link.expiresAt).toISOString().slice(0, 16) : ""); setIsPrivate(link.isPrivate); setActive(link.active);
+    setScreenshotDisabled(link.screenshotDisabled); setRedirectDelaySeconds(link.redirectDelaySeconds?.toString() ?? "");
     setSelectedCollections(collections.filter(c => link.collectionIds.includes(c.id))); setError(null);
   }
 
   async function save() {
     if (!editing) return;
-    const response = await fetch(`/api/links/${encodeURIComponent(editing.code)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ targetUrl, title, description, isPrivate, active, expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null, collectionIds: selectedCollections.map(c => c.id) }) });
+    const redirectDelay = redirectDelaySeconds.trim() === "" ? null : Math.max(3, Number(redirectDelaySeconds) || 3);
+    const response = await fetch(`/api/links/${encodeURIComponent(editing.code)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ targetUrl, title, description, isPrivate, active, expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null, collectionIds: selectedCollections.map(c => c.id), screenshotDisabled, redirectDelaySeconds: redirectDelay }) });
     const data = await response.json().catch(() => null);
     if (!response.ok) { setError(data?.error ?? "Could not save link"); return; }
-    setLinks(current => current.map(l => l.id === editing.id ? { ...l, targetUrl, title, description, isPrivate, active, expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null, collectionIds: selectedCollections.map(c => c.id) } : l));
+    setLinks(current => current.map(l => l.id === editing.id ? { ...l, targetUrl, title, description, isPrivate, active, expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null, collectionIds: selectedCollections.map(c => c.id), screenshotDisabled, redirectDelaySeconds: redirectDelay } : l));
     setEditing(null);
   }
 
@@ -72,6 +76,8 @@ export function LinkManager({ initial, collections }: { initial: Link[]; collect
         <Autocomplete multiple options={collections} value={selectedCollections} getOptionLabel={c => c.name} isOptionEqualToValue={(a, b) => a.id === b.id} onChange={(_, value) => setSelectedCollections(value)} renderInput={params => <TextField {...params} label="Collections" placeholder="Add collection" />} />
         <FormControlLabel control={<Switch checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)} />} label={isPrivate ? "Private link" : "Public link"} />
         <FormControlLabel control={<Switch checked={active} onChange={e => setActive(e.target.checked)} />} label={active ? "Active" : "Deactivated"} />
+        <FormControlLabel control={<Switch checked={!screenshotDisabled} onChange={e => setScreenshotDisabled(!e.target.checked)} />} label={screenshotDisabled ? "No preview image (screenshot disabled)" : "Show a preview image on the link page"} />
+        <TextField label="Redirect delay override (seconds)" type="number" inputProps={{ min: 3 }} value={redirectDelaySeconds} onChange={e => setRedirectDelaySeconds(e.target.value)} fullWidth helperText="Leave empty to use the domain default. Minimum 3 seconds." />
       </Stack></DialogContent>
       <DialogActions><Button onClick={() => setEditing(null)}>Cancel</Button><Button variant="contained" startIcon={<SaveIcon />} onClick={save}>Save</Button></DialogActions>
     </Dialog>

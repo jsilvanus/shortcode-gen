@@ -159,7 +159,10 @@ model ShortLink {
   canonicalUrl String?
   imageUrl String?
   faviconUrl String?
-  screenshotPath String?
+  screenshotLandscapePath String?
+  screenshotPortraitPath String?
+  screenshotDisabled Boolean @default(false)
+  redirectDelaySeconds Int?
   metadataSource String?
   contentHash String?
   etag String?
@@ -184,6 +187,7 @@ model ShortLink {
   dailyStats LinkDailyStat[]
   monthlyStats LinkMonthlyStat[]
   collections LinkCollection[]
+  complaints LinkComplaint[]
   @@unique([domainId, code])
   @@index([domainId])
   @@index([domainId, ownerId])
@@ -252,6 +256,17 @@ model Job {
   shortLink ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
   @@index([status, runAfter])
   @@index([shortLinkId])
+}
+
+model LinkComplaint {
+  id          String    @id @default(cuid())
+  shortLinkId String
+  message     String
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+  shortLink   ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
+  @@index([shortLinkId])
+  @@index([createdAt])
 }
 
 model LinkVisit {

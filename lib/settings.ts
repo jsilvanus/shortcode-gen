@@ -4,7 +4,7 @@ export const SETTING_KEY = "site_settings";
 
 export const DEFAULT_SETTINGS = {
   general: { siteName: "Shortcode Gen", siteDescription: "Self-hosted short-link service", publicUrl: "" },
-  linkPolicy: { allowedDomains: [] as string[], defaultPrivate: true, defaultTtlDays: null as number | null, maxTtlDays: null as number | null, allowCustomCodes: true },
+  linkPolicy: { allowedDomains: [] as string[], defaultPrivate: true, defaultTtlDays: null as number | null, maxTtlDays: null as number | null, allowCustomCodes: true, redirectDelaySeconds: 5 },
   privacy: { controllerName: "", contactEmail: "", privacyPolicyUrl: "", processorInfo: "", analyticsDescription: "" },
   analytics: { enabled: true, rawRetentionDays: 90, dailyAggregateRetention: "indefinite" as const },
   appearance: {
@@ -20,7 +20,7 @@ export const DEFAULT_SETTINGS = {
 export type ThemeSettings = { background: string; primary: string; secondary: string };
 export type SiteSettings = {
   general: { siteName: string; siteDescription: string; publicUrl: string };
-  linkPolicy: { allowedDomains: string[]; defaultPrivate: boolean; defaultTtlDays: number | null; maxTtlDays: number | null; allowCustomCodes: boolean };
+  linkPolicy: { allowedDomains: string[]; defaultPrivate: boolean; defaultTtlDays: number | null; maxTtlDays: number | null; allowCustomCodes: boolean; redirectDelaySeconds: number };
   privacy: { controllerName: string; contactEmail: string; privacyPolicyUrl: string; processorInfo: string; analyticsDescription: string };
   analytics: { enabled: boolean; rawRetentionDays: number; dailyAggregateRetention: "indefinite" };
   appearance: { brandIconUrl: string; faviconUrl: string; footerText: string; themes: { light: ThemeSettings; dark: ThemeSettings; contrast: ThemeSettings } };

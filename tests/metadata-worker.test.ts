@@ -18,6 +18,7 @@ function fakePage() {
     setDefaultNavigationTimeout: vi.fn(),
     goto: vi.fn().mockResolvedValue(undefined),
     waitForTimeout: vi.fn().mockResolvedValue(undefined),
+    setViewportSize: vi.fn().mockResolvedValue(undefined),
     evaluate: vi.fn().mockResolvedValue({
       title: "Example",
       description: null,
@@ -38,7 +39,7 @@ describe("metadata worker SSRF boundary", () => {
     assertSafeUrl.mockResolvedValue(undefined);
     jobFindUnique.mockResolvedValue({
       id: "job-1", type: "METADATA", attempts: 0, shortLinkId: "link-1",
-      shortLink: { id: "link-1", domainId: "domain-1", targetUrl: "https://allowed.example/page" },
+      shortLink: { id: "link-1", domainId: "domain-1", targetUrl: "https://allowed.example/page", screenshotDisabled: false, screenshotLandscapePath: null, screenshotPortraitPath: null },
     });
     jobUpdate.mockResolvedValue({});
     shortLinkUpdate.mockResolvedValue({});
@@ -54,9 +55,11 @@ describe("metadata worker SSRF boundary", () => {
 
     expect(assertSafeUrl).toHaveBeenCalledWith("https://allowed.example/page", ["allowed.example"]);
     expect(context.route).toHaveBeenCalledWith("**/*", expect.any(Function));
+    expect(page.setViewportSize).toHaveBeenCalledWith({ width: 720, height: 1280 });
+    expect(page.screenshot).toHaveBeenCalledTimes(2);
     expect(shortLinkUpdate).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "link-1" },
-      data: expect.objectContaining({ renderStatus: "completed", renderError: null }),
+      data: expect.objectContaining({ renderStatus: "completed", renderError: null, screenshotLandscapePath: expect.stringContaining("link-1-landscape.png"), screenshotPortraitPath: expect.stringContaining("link-1-portrait.png") }),
     }));
     expect(jobUpdate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: "completed" }),
@@ -68,7 +71,7 @@ describe("metadata worker SSRF boundary", () => {
     assertSafeUrl.mockRejectedValue(new Error("Target resolves to a private or reserved address"));
     jobFindUnique.mockResolvedValue({
       id: "job-2", type: "METADATA", attempts: 0, shortLinkId: "link-2",
-      shortLink: { id: "link-2", domainId: "domain-1", targetUrl: "https://allowed.example/redirect-to-private" },
+      shortLink: { id: "link-2", domainId: "domain-1", targetUrl: "https://allowed.example/redirect-to-private", screenshotDisabled: false, screenshotLandscapePath: null, screenshotPortraitPath: null },
     });
     jobUpdate.mockResolvedValue({});
     shortLinkUpdate.mockResolvedValue({});

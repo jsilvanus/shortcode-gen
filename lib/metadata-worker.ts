@@ -5,6 +5,7 @@ import { chromium } from "playwright";
 import { db } from "@/lib/db";
 import { getDomainSettings } from "@/lib/settings";
 import { assertSafeUrl, safeFetch } from "@/lib/security/safe-fetch";
+import { deleteScreenshotFiles } from "@/lib/screenshots";
 
 const MAX_BYTES = 1_000_000;
 const NAVIGATION_TIMEOUT_MS = Number(process.env.PLAYWRIGHT_NAVIGATION_TIMEOUT_MS ?? 20_000);
@@ -59,10 +60,22 @@ export async function runHttpChangeDetection() {
   return changed;
 }
 
-async function renderPage(browser: import("playwright").Browser, link: { id: string; targetUrl: string; domainId: string }) {
+const LANDSCAPE_VIEWPORT = { width: 1280, height: 720 };
+const PORTRAIT_VIEWPORT = { width: 720, height: 1280 };
+
+async function captureScreenshot(page: import("playwright").Page, screenshotDir: string, linkId: string, orientation: "landscape" | "portrait") {
+  const filename = `${linkId}-${orientation}.png`;
+  const tmp = path.join(screenshotDir, `.${filename}.tmp`);
+  const destination = path.join(screenshotDir, filename);
+  await page.screenshot({ path: tmp, type: "png" });
+  await rename(tmp, destination);
+  return destination;
+}
+
+async function renderPage(browser: import("playwright").Browser, link: { id: string; targetUrl: string; domainId: string; screenshotDisabled: boolean }) {
   const allowedDomains = await readAllowedDomains(link.domainId);
   await assertSafeUrl(link.targetUrl, allowedDomains);
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const context = await browser.newContext({ viewport: LANDSCAPE_VIEWPORT });
   try {
     await context.route("**/*", async route => {
       const url = route.request().url();
@@ -85,14 +98,17 @@ async function renderPage(browser: import("playwright").Browser, link: { id: str
       faviconUrl: document.querySelector('link[rel*="icon"]')?.getAttribute("href") ?? "/favicon.ico",
       finalUrl: location.href,
     }));
-    const screenshotDir = process.env.SCREENSHOT_DIR ?? "/data/screenshots";
-    await mkdir(screenshotDir, { recursive: true });
-    const filename = `${link.id}.png`;
-    const tmp = path.join(screenshotDir, `.${filename}.tmp`);
-    const destination = path.join(screenshotDir, filename);
-    await page.screenshot({ path: tmp, type: "png" });
-    await rename(tmp, destination);
-    return { ...rendered, imageUrl: absoluteUrl(rendered.imageUrl ?? "", rendered.finalUrl), canonicalUrl: absoluteUrl(rendered.canonicalUrl ?? "", rendered.finalUrl), faviconUrl: absoluteUrl(rendered.faviconUrl ?? "/favicon.ico", rendered.finalUrl), screenshotPath: destination };
+    let screenshotLandscapePath: string | null = null;
+    let screenshotPortraitPath: string | null = null;
+    if (!link.screenshotDisabled) {
+      const screenshotDir = process.env.SCREENSHOT_DIR ?? "/data/screenshots";
+      await mkdir(screenshotDir, { recursive: true });
+      screenshotLandscapePath = await captureScreenshot(page, screenshotDir, link.id, "landscape");
+      await page.setViewportSize(PORTRAIT_VIEWPORT);
+      await page.waitForTimeout(300);
+      screenshotPortraitPath = await captureScreenshot(page, screenshotDir, link.id, "portrait");
+    }
+    return { ...rendered, imageUrl: absoluteUrl(rendered.imageUrl ?? "", rendered.finalUrl), canonicalUrl: absoluteUrl(rendered.canonicalUrl ?? "", rendered.finalUrl), faviconUrl: absoluteUrl(rendered.faviconUrl ?? "/favicon.ico", rendered.finalUrl), screenshotLandscapePath, screenshotPortraitPath };
   } finally {
     await context.close();
   }
@@ -102,8 +118,9 @@ export async function processMetadataJob(jobId: string, browser: import("playwri
   const job = await db.job.findUnique({ where: { id: jobId }, include: { shortLink: true } });
   if (!job || job.type !== "METADATA") return;
   try {
+    if (job.shortLink.screenshotDisabled) await deleteScreenshotFiles([job.shortLink.screenshotLandscapePath, job.shortLink.screenshotPortraitPath]);
     const rendered = await renderPage(browser, job.shortLink);
-    await db.shortLink.update({ where: { id: job.shortLinkId }, data: { title: rendered.title, description: rendered.description, imageUrl: rendered.imageUrl, canonicalUrl: rendered.canonicalUrl, faviconUrl: rendered.faviconUrl, metadataSource: rendered.finalUrl, screenshotPath: rendered.screenshotPath, lastRenderedAt: new Date(), needsRender: false, renderStatus: "completed", renderError: null, lastSuccessfulFetchAt: new Date() } });
+    await db.shortLink.update({ where: { id: job.shortLinkId }, data: { title: rendered.title, description: rendered.description, imageUrl: rendered.imageUrl, canonicalUrl: rendered.canonicalUrl, faviconUrl: rendered.faviconUrl, metadataSource: rendered.finalUrl, screenshotLandscapePath: rendered.screenshotLandscapePath, screenshotPortraitPath: rendered.screenshotPortraitPath, lastRenderedAt: new Date(), needsRender: false, renderStatus: "completed", renderError: null, lastSuccessfulFetchAt: new Date() } });
     await db.job.update({ where: { id: jobId }, data: { status: "completed", finishedAt: new Date(), attempts: { increment: 1 } } });
   } catch (error) {
     const attempts = job.attempts + 1;

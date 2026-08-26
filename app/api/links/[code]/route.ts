@@ -5,6 +5,7 @@ import { canEditLink, canViewLink } from "@/lib/auth/authorization";
 import { getCurrentDomainContext } from "@/lib/domain-context";
 import { validateExpiry, validateTargetUrl } from "@/lib/links/service";
 import { recordAuditEvent } from "@/lib/audit/log";
+import { deleteScreenshotFiles } from "@/lib/screenshots";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ code: string }> }) {
   const context = await getCurrentDomainContext();
@@ -44,9 +45,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
       const settings = (await validateTargetUrl(link.targetUrl, context.domain.id)).settings;
       validateExpiry(expiresAt, settings);
     }
+    if (body?.redirectDelaySeconds !== undefined && body.redirectDelaySeconds !== null) {
+      if (!Number.isInteger(body.redirectDelaySeconds) || body.redirectDelaySeconds < 3) throw new Error("redirectDelaySeconds must be null or an integer of at least 3");
+    }
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid link data" }, { status: 400 });
   }
+  const screenshotDisabled = typeof body?.screenshotDisabled === "boolean" ? body.screenshotDisabled : undefined;
+  const redirectDelaySeconds = body?.redirectDelaySeconds === undefined ? undefined : (body.redirectDelaySeconds as number | null);
 
   const collectionIds = Array.isArray(body?.collectionIds) && body.collectionIds.every((x: unknown) => typeof x === "string") ? [...new Set(body.collectionIds as string[])] : null;
   if (body?.collectionIds !== undefined && !collectionIds) return NextResponse.json({ error: "Invalid collectionIds" }, { status: 400 });
@@ -63,6 +69,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
       ...(typeof body?.title === "string" ? { title: body.title } : {}),
       ...(typeof body?.description === "string" ? { description: body.description } : {}),
       ...(typeof body?.active === "boolean" ? { active: body.active } : {}),
+      ...(screenshotDisabled !== undefined ? { screenshotDisabled, ...(screenshotDisabled ? { screenshotLandscapePath: null, screenshotPortraitPath: null } : {}) } : {}),
+      ...(redirectDelaySeconds !== undefined ? { redirectDelaySeconds } : {}),
     } });
     if (collectionIds) {
       await tx.linkCollection.deleteMany({ where: { shortLinkId: link.id } });
@@ -70,6 +78,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
     }
     return result;
   });
+  if (screenshotDisabled) await deleteScreenshotFiles([link.screenshotLandscapePath, link.screenshotPortraitPath]);
   await recordAuditEvent({ domainId: context.domain.id, userId: user.id, authMethod: context.authMethod, apiKeyId: context.apiKeyId, action: "link.update", resourceType: "ShortLink", resourceId: updated.id });
   return NextResponse.json(updated);
 }
@@ -86,6 +95,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const role = context.membership.role === "ADMIN" ? "ADMIN" : "USER";
   if (!canEditLink(role, link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await db.shortLink.delete({ where: { id: link.id } });
+  await deleteScreenshotFiles([link.screenshotLandscapePath, link.screenshotPortraitPath]);
   await recordAuditEvent({ domainId: context.domain.id, userId: user.id, authMethod: context.authMethod, apiKeyId: context.apiKeyId, action: "link.delete", resourceType: "ShortLink", resourceId: link.id });
   return new NextResponse(null, { status: 204 });
 }

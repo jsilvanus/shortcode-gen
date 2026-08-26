@@ -1,12 +1,19 @@
 import { db } from "@/lib/db";
 import { aggregateVisits } from "@/lib/analytics";
 import { renderPendingMetadataJobs, runHttpChangeDetection } from "@/lib/metadata-worker";
+import { purgeExpiredAuditLog } from "@/lib/audit/log";
+import { purgeExpiredScreenshots } from "@/lib/screenshots";
 
 const POLL_MS = Number(process.env.WORKER_POLL_MS ?? 3 * 60 * 60 * 1000);
 
+// All of these are TTL-based cutoffs computed from `now`, not from when cleanup last ran, so a
+// missed or delayed cycle never lets anything live longer than its retention period implies.
 async function cleanup() {
   await db.loginAttempt.deleteMany({ where: { resetAt: { lte: new Date() } } });
+  await db.apiRequestAttempt.deleteMany({ where: { resetAt: { lt: new Date(Date.now() - 90 * 86_400_000) } } });
   await db.linkVisit.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 90 * 86_400_000) } } });
+  await purgeExpiredAuditLog();
+  await purgeExpiredScreenshots();
 }
 
 async function statistics() {
