@@ -2,17 +2,13 @@ import { headers } from "next/headers";
 import { getCurrentUser } from "@/lib/auth/session";
 import { resolveApiKeyAuth } from "@/lib/auth/api-keys";
 import { getActiveDomainByHostname, getDomainMembership } from "@/lib/domain";
+import { getTrustedClientIp } from "@/lib/security/client-ip";
 
 function getBearerToken(requestHeaders: Headers): string | null {
   const header = requestHeaders.get("authorization");
   if (!header?.startsWith("Bearer ")) return null;
   const token = header.slice("Bearer ".length).trim();
   return token || null;
-}
-
-function getClientIp(requestHeaders: Headers): string {
-  const forwarded = requestHeaders.get("x-forwarded-for");
-  return forwarded?.split(",")[0]?.trim() || requestHeaders.get("x-real-ip") || "unknown";
 }
 
 export async function getRequestHostname(): Promise<string> {
@@ -42,7 +38,7 @@ export async function getCurrentDomainContext() {
   const requestHeaders = await headers();
   const bearer = getBearerToken(requestHeaders);
   if (bearer) {
-    const result = await resolveApiKeyAuth(bearer, domain.id, getClientIp(requestHeaders));
+    const result = await resolveApiKeyAuth(bearer, domain.id, getTrustedClientIp(requestHeaders));
     if (result.status === "rate_limited") return { domain, user: null, membership: null, rateLimited: true };
     if (result.status === "invalid") return { domain, user: null, membership: null, rateLimited: false };
     return { domain, user: result.user, membership: result.membership, rateLimited: false };
