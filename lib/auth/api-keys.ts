@@ -60,7 +60,7 @@ async function checkRateLimit(key: string, windowMs: number, maxAttempts: number
 }
 
 export type ApiKeyAuthResult =
-  | { status: "ok"; user: NonNullable<Awaited<ReturnType<typeof db.user.findUnique>>>; membership: { role: string } }
+  | { status: "ok"; user: NonNullable<Awaited<ReturnType<typeof db.user.findUnique>>>; membership: { role: string }; apiKeyId: string }
   | { status: "invalid" }
   | { status: "rate_limited" };
 
@@ -91,5 +91,5 @@ export async function resolveApiKeyAuth(token: string, domainId: string, clientI
 
   db.apiKey.update({ where: { id: apiKey.id }, data: { lastUsedAt: new Date() } }).catch(() => undefined);
 
-  return { status: "ok", user: apiKey.user, membership: { role: membership.role } };
+  return { status: "ok", user: apiKey.user, membership: { role: membership.role }, apiKeyId: apiKey.id };
 }
