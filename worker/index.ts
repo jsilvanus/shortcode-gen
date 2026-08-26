@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { aggregateVisits } from "@/lib/analytics";
+import { aggregateVisits, collapseExpiredYearlyHll } from "@/lib/analytics";
 import { renderPendingMetadataJobs, runHttpChangeDetection } from "@/lib/metadata-worker";
 import { purgeExpiredAuditLog } from "@/lib/audit/log";
 import { purgeExpiredScreenshots } from "@/lib/screenshots";
@@ -20,6 +20,10 @@ async function statistics() {
   const now = new Date();
   const endOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   await aggregateVisits(endOfDay);
+  // Must run after aggregateVisits: on Jan 1, "yesterday" (Dec 31) still belongs to the closing
+  // year's last month, so collapsing before that day's aggregation lands would merge an
+  // incomplete sketch. Aggregating first guarantees the closing year's HLLs are complete.
+  await collapseExpiredYearlyHll(now);
 }
 
 async function runOnce() {

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentDomainContext } from "@/lib/domain-context";
-import { mergeHll, estimateHll, decodeHll } from "@/lib/hll";
-import { suppressSmallCount } from "@/lib/analytics";
+import { mergeHll, estimateHll, decodeHll, emptyHll } from "@/lib/hll";
+import { suppressSmallCount, monthlyUniqueViews, monthlyUniqueRedirects } from "@/lib/analytics";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -32,8 +32,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const firstMonth = from.getUTCFullYear() * 100 + from.getUTCMonth() + 1;
   const lastMonth = to.getUTCFullYear() * 100 + to.getUTCMonth() + 1;
   const relevant = monthly.filter(m => { const key = m.year * 100 + m.month; return key >= firstMonth && key <= lastMonth; });
-  const uniqueViews = estimateHll(mergeHll(relevant.map(m => decodeHll(m.uniqueViewsHll))));
-  const uniqueRedirects = estimateHll(mergeHll(relevant.map(m => decodeHll(m.uniqueRedirectsHll))));
+  // Live months merge into an exact union; a collapsed month (see collapseExpiredYearlyHll) only
+  // has a scalar left, so it's summed in as an approximation instead.
+  const live = relevant.filter(m => m.uniqueViewsHll || m.uniqueRedirectsHll);
+  const collapsed = relevant.filter(m => !m.uniqueViewsHll && !m.uniqueRedirectsHll);
+  const uniqueViews = estimateHll(mergeHll(live.map(m => m.uniqueViewsHll ? decodeHll(m.uniqueViewsHll) : emptyHll()))) + collapsed.reduce((n, m) => n + monthlyUniqueViews(m), 0);
+  const uniqueRedirects = estimateHll(mergeHll(live.map(m => m.uniqueRedirectsHll ? decodeHll(m.uniqueRedirectsHll) : emptyHll()))) + collapsed.reduce((n, m) => n + monthlyUniqueRedirects(m), 0);
   const dailySeries = Object.values(daily.reduce<Record<string, { date: string; pageViews: number; redirects: number }>>((acc, d) => {
     const key = d.date.toISOString().slice(0, 10); const current = acc[key] ?? { date: key, pageViews: 0, redirects: 0 };
     current.pageViews += d.pageViews; current.redirects += d.redirects; acc[key] = current; return acc;
@@ -42,6 +46,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     collectionId: id, from, to, exact: false, linkCount: ids.length,
     totals: { pageViews: suppressSmallCount(totals.pageViews), redirects: suppressSmallCount(totals.redirects), uniqueViews: suppressSmallCount(uniqueViews), uniqueRedirects: suppressSmallCount(uniqueRedirects) },
     daily: dailySeries.map(d => ({ date: d.date, pageViews: suppressSmallCount(d.pageViews), redirects: suppressSmallCount(d.redirects) })),
-    monthly: relevant.map(m => ({ year: m.year, month: m.month, uniqueViews: suppressSmallCount(estimateHll(decodeHll(m.uniqueViewsHll))), uniqueRedirects: suppressSmallCount(estimateHll(decodeHll(m.uniqueRedirectsHll))) })),
+    monthly: relevant.map(m => ({ year: m.year, month: m.month, uniqueViews: suppressSmallCount(monthlyUniqueViews(m)), uniqueRedirects: suppressSmallCount(monthlyUniqueRedirects(m)) })),
   });
 }

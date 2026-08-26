@@ -21,7 +21,8 @@ This is an engineering inventory of data represented by the current database sch
 | Link visit event | Analytics | Potentially | Enforced: 90 days | Domain/link scoped |
 | Visitor hash | Analytics | Potentially pseudonymous personal data | Same as link visit event | Scoped per short link (year + linkId + ip + userAgent), so it cannot correlate one visitor across different links |
 | Daily statistics | Analytics | Small nonzero counts can single out a specific handful of visitors on a specific day | Row retention: no complete policy yet. Small-cell disclosure: mitigated — stats API responses report a nonzero count under the reporting threshold as suppressed (`null`) rather than the exact number | Link scoped |
-| Monthly HLL statistics | Analytics | Aggregate/approximate; depends on inputs | Row retention: no complete policy yet. Same small-cell suppression as daily statistics applies to the estimated unique counts served from these rows | Link scoped |
+| Monthly HLL statistics | Analytics | The live HLL sketch enables an insider-only membership-inference attack (see below); the collapsed scalar left behind carries the same small-cell risk as daily statistics | Enforced: a calendar year's sketches live only through the end of that year; once the year closes they are merged into an exact `LinkYearlyStat` union and the sketches themselves are deleted, leaving only plain scalars | Link scoped |
+| Yearly unique statistics (`LinkYearlyStat`) | Analytics | Same small-cell risk as daily statistics; no membership-inference risk (plain scalar, no sketch) | Row retention: no complete policy yet | Link scoped; computed once from that year's HLL sketches before they're discarded |
 | Link timestamps | Operations | Potentially contextual data | Link lifetime | Creation/update/click/fetch times |
 | Job errors | Worker diagnostics | May contain target-specific information | No complete retention policy yet | Avoid secrets in errors |
 | Link complaint | Abuse/quality reporting | Free-text message may contain personal data volunteered by the reporter | No complete retention policy yet | No reporter identifier stored; rate-limited per link+IP |
@@ -36,6 +37,14 @@ This is an engineering inventory of data represented by the current database sch
 Unlike the visitor hash, `LinkDailyStat`'s `pageViews`/`redirects`/`uniqueViews`/`uniqueRedirects` are plain integers. A busy link's count is effectively anonymous, but a low-traffic link (a one-off invite sent to a specific person, a small pastoral-care link) can make an exact small count itself the personal-data disclosure — e.g. "1 unique view on 2026-08-14" tells anyone who already knows who the link was sent to that a specific person acted on a specific day. This risk is independent of the visitorHash scoping fix above and isn't bounded to the link's own owner: any domain member can view stats for a non-private link they don't own, and any domain admin can view stats for every link in the domain.
 
 All stats API responses (`/api/links/[code]/stats`, `/api/dashboard/stats`, `/api/collections/[id]/stats`) now suppress this: a nonzero count below `MIN_REPORTED_CELL` (3) is reported as `null` instead of the exact number, both in daily/monthly breakdowns and in range totals. A true zero is unaffected — only the "somebody, but very few" band is hidden. This addresses the disclosure risk in what gets served; it does not by itself give the underlying `LinkDailyStat`/`LinkMonthlyStat` rows a retention schedule (see "Missing operator decisions" below).
+
+### Monthly HLL sketches: membership inference and one-year retention
+
+A HyperLogLog sketch isn't a simple count — it's a small, deterministic function of the actual set of `visitorHash` values merged into it. Someone who already holds `ANALYTICS_HASH_SECRET` and a target's IP/user-agent (the same prerequisite needed to read raw `LinkVisit` rows directly) can compute that person's hash and test whether merging it would change the sketch: if a register is *already* at or above the value their hash would set, that's consistent with (but doesn't prove) their presence; if it's *below*, that conclusively proves their absence. This is real but narrow — it hands an insider with DB+secret access a probabilistic signal, nothing an outside attacker can use.
+
+What made it worth fixing regardless: unlike raw `LinkVisit` (90-day retention), the monthly HLL sketches previously had no expiry, so this insider-only exposure window never closed. `collapseExpiredYearlyHll` (`lib/analytics.ts`, run by the worker) now closes it at one year: once a calendar year ends, its months' sketches are merged into one true union — computed *before* the sketches are discarded, so the yearly figure (`LinkYearlyStat`) stays an exact distinct count rather than degrading into a sum-of-months overcount — and each month row is collapsed to a plain scalar (`uniqueViewsEstimate`/`uniqueRedirectsEstimate`), with the HLL columns set to `null`. A plain scalar has no registers to test membership against, so it carries only the same (already-mitigated) small-cell risk as `LinkDailyStat`, not the sketch-specific membership-inference risk.
+
+One accuracy trade-off this accepts: a query for a *whole* closed year uses the exact `LinkYearlyStat` union; a query spanning multiple closed years, or a partial slice of one, falls back to summing scalars and can overcount a visitor who appears in more than one of the summed periods. Since a calendar year is the standard reporting period for this deployment, that trade-off only bites for less common range shapes.
 
 ### Visitor analytics
 
@@ -78,7 +87,7 @@ Administrator
 
 The implementation still needs explicit deployment-level decisions for:
 
-- daily/monthly aggregate statistics row retention (raw visit events and screenshots now have enforced retention; the aggregate rows derived from them do not yet — small-cell disclosure in what those rows expose is mitigated separately, see below, but that is not the same thing as a retention schedule for the rows themselves);
+- daily statistics and yearly unique statistics row retention (raw visit events, screenshots, and monthly HLL sketches now have enforced retention; `LinkDailyStat`/`LinkYearlyStat` rows do not yet — small-cell disclosure in what those rows expose is mitigated separately, see below, but that is not the same thing as a retention schedule for the rows themselves);
 - expired-link record retention/deletion — expiry is a public-access cutoff only, not a deletion trigger; the link record itself stays until an admin deletes it manually;
 - session cleanup for sessions that expire without an explicit logout;
 - job/error-log retention;

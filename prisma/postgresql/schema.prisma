@@ -186,6 +186,7 @@ model ShortLink {
   visits LinkVisit[]
   dailyStats LinkDailyStat[]
   monthlyStats LinkMonthlyStat[]
+  yearlyStats LinkYearlyStat[]
   collections LinkCollection[]
   complaints LinkComplaint[]
   @@unique([domainId, code])
@@ -293,16 +294,40 @@ model LinkDailyStat {
   @@index([shortLinkId, date])
 }
 
+/// uniqueViewsHll/uniqueRedirectsHll hold the live, mergeable HLL sketch for the current
+/// calendar year only. Once a year closes, the worker merges all its months into a
+/// LinkYearlyStat (an exact union, computed while the sketches still exist) and collapses each
+/// month row here down to a plain scalar in uniqueViewsEstimate/uniqueRedirectsEstimate, nulling
+/// the HLL columns — closing the HLL membership-inference exposure window at one year instead of
+/// leaving it open indefinitely.
 model LinkMonthlyStat {
   id String @id @default(cuid())
   shortLinkId String
   year Int
   month Int
-  uniqueViewsHll String
-  uniqueRedirectsHll String
+  uniqueViewsHll String?
+  uniqueRedirectsHll String?
+  uniqueViewsEstimate Int?
+  uniqueRedirectsEstimate Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   shortLink ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
   @@unique([shortLinkId, year, month])
   @@index([shortLinkId, year, month])
+}
+
+/// The permanent, privacy-safe record of a closed year's true distinct unique counts — computed
+/// once, by merging that year's monthly HLL sketches before they're discarded, so it stays an
+/// exact union rather than degrading into a sum-of-months overcount.
+model LinkYearlyStat {
+  id String @id @default(cuid())
+  shortLinkId String
+  year Int
+  uniqueViews Int
+  uniqueRedirects Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  shortLink ShortLink @relation(fields: [shortLinkId], references: [id], onDelete: Cascade)
+  @@unique([shortLinkId, year])
+  @@index([shortLinkId, year])
 }

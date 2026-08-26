@@ -54,7 +54,9 @@ The current implementation includes visit events, visitor hashes and aggregate d
 
 A hash is not automatically anonymous simply because the original identifier is not stored in clear text. The visitor hash is scoped per short link (it is derived from the year, the link's own ID, the IP address and the user agent), so it cannot be used to correlate one visitor's activity across different links or domains in the same deployment — a hash only ever answers "did this visitor hit this link", not "everything this visitor did across the site".
 
-Separately, the plain integer counts in `LinkDailyStat`/`LinkMonthlyStat` (page views, redirects, unique views/redirects) carry their own small-cell disclosure risk: for a low-traffic link, an exact small count (e.g. "1 unique view") can itself identify that a specific known recipient acted on a specific day, to any viewer who already knows who the link was sent to — and that viewer isn't necessarily the link's own owner, since other domain members can see stats for non-private links they don't own and admins can see stats for every link. The stats API now suppresses this: any nonzero count below a small reporting threshold is returned as `null` rather than the exact number, in both the daily/monthly breakdowns and the range totals. This addresses disclosure in what's served; it is not a retention schedule for the underlying rows, which remains open (see Retention below).
+Separately, the plain integer counts in `LinkDailyStat`/`LinkMonthlyStat` (page views, redirects, unique views/redirects) carry their own small-cell disclosure risk: for a low-traffic link, an exact small count (e.g. "1 unique view") can itself identify that a specific known recipient acted on a specific day, to any viewer who already knows who the link was sent to — and that viewer isn't necessarily the link's own owner, since other domain members can see stats for non-private links they don't own and admins can see stats for every link. The stats API now suppresses this: any nonzero count below a small reporting threshold is returned as `null` rather than the exact number, in both the daily/monthly breakdowns and the range totals. This addresses disclosure in what's served; it is not a retention schedule for the underlying `LinkDailyStat` rows, which remains open (see Retention below).
+
+The monthly HLL sketch itself carries a different, narrower risk: because it's a deterministic function of the actual visitor hashes merged into it, an insider who already holds `ANALYTICS_HASH_SECRET` and a target's IP/user-agent can test whether that person's hash was merged in (a one-sided test — it can prove absence, not presence). This required the same privileged access as reading raw visit rows directly, but unlike those rows (90-day retention) the sketches previously never expired. They now do: once a calendar year closes, the worker merges that year's months into one exact union (`LinkYearlyStat`, computed before the sketches are discarded) and collapses each month to a plain scalar, deleting the HLL columns — closing that exposure at one year instead of leaving it open indefinitely.
 
 ### Audit logging
 
@@ -88,7 +90,8 @@ A deployment should explicitly define retention for:
 - API keys;
 - visit events (enforced: 90 days);
 - rate-limit attempt state (enforced: `LoginAttempt` at reset, `ApiRequestAttempt` 90 days after reset);
-- aggregate statistics;
+- monthly unique-visitor sketches (enforced: collapsed to a scalar and deleted once their calendar year closes — see Analytics above);
+- daily statistics and yearly unique-visitor statistics (`LinkDailyStat`, `LinkYearlyStat` row retention — not yet defined; small-cell disclosure in what they expose is mitigated separately, see Analytics above);
 - screenshots (enforced for expiry — see below — but not for links that are simply never re-rendered);
 - metadata;
 - expired links (the link record itself is not purged automatically — see "Expiry is not deletion" below);

@@ -3,8 +3,7 @@ import { db } from "@/lib/db";
 import { canonicalizeCode } from "@/lib/links/codes";
 import { getCurrentDomainContext } from "@/lib/domain-context";
 import { canViewLink } from "@/lib/auth/authorization";
-import { estimateHll, mergeHll, decodeHll } from "@/lib/hll";
-import { suppressSmallCount } from "@/lib/analytics";
+import { suppressSmallCount, monthlyUniqueViews, monthlyUniqueRedirects, estimateLinkUniqueRange } from "@/lib/analytics";
 
 export async function GET(request: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
@@ -23,16 +22,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ code
   const exactViews = new Set(rawEvents.filter(e => e.eventType === "PAGE_VIEW").map(e => e.visitorHash)).size;
   const exactRedirects = new Set(rawEvents.filter(e => e.eventType === "REDIRECT").map(e => e.visitorHash)).size;
   const monthly = await db.linkMonthlyStat.findMany({ where: { shortLinkId: link.id }, orderBy: [{ year: "asc" }, { month: "asc" }] });
-  const hllViews = mergeHll(monthly.filter(m => m.year * 100 + m.month >= from.getUTCFullYear() * 100 + (from.getUTCMonth() + 1) && m.year * 100 + m.month <= to.getUTCFullYear() * 100 + (to.getUTCMonth() + 1)).map(m => decodeHll(m.uniqueViewsHll)));
-  const hllRedirects = mergeHll(monthly.filter(m => m.year * 100 + m.month >= from.getUTCFullYear() * 100 + (from.getUTCMonth() + 1) && m.year * 100 + m.month <= to.getUTCFullYear() * 100 + (to.getUTCMonth() + 1)).map(m => decodeHll(m.uniqueRedirectsHll)));
   const fullyRaw = to.getTime() <= Date.now() && from.getTime() >= Date.now() - 90 * 86400000;
   const totals = daily.reduce((a, d) => ({ pageViews: a.pageViews + d.pageViews, redirects: a.redirects + d.redirects }), { pageViews: 0, redirects: 0 });
-  const uniqueViews = fullyRaw ? exactViews : estimateHll(hllViews);
-  const uniqueRedirects = fullyRaw ? exactRedirects : estimateHll(hllRedirects);
+  const rangeUnique = fullyRaw ? { uniqueViews: exactViews, uniqueRedirects: exactRedirects } : await estimateLinkUniqueRange(link.id, from, to);
   return NextResponse.json({
     from, to, exact: fullyRaw,
-    totals: { pageViews: suppressSmallCount(totals.pageViews), redirects: suppressSmallCount(totals.redirects), uniqueViews: suppressSmallCount(uniqueViews), uniqueRedirects: suppressSmallCount(uniqueRedirects) },
+    totals: { pageViews: suppressSmallCount(totals.pageViews), redirects: suppressSmallCount(totals.redirects), uniqueViews: suppressSmallCount(rangeUnique.uniqueViews), uniqueRedirects: suppressSmallCount(rangeUnique.uniqueRedirects) },
     daily: daily.map(d => ({ date: d.date, pageViews: suppressSmallCount(d.pageViews), redirects: suppressSmallCount(d.redirects), uniqueViews: suppressSmallCount(d.uniqueViews), uniqueRedirects: suppressSmallCount(d.uniqueRedirects) })),
-    monthly: monthly.map(m => ({ year: m.year, month: m.month, uniqueViews: suppressSmallCount(estimateHll(decodeHll(m.uniqueViewsHll))), uniqueRedirects: suppressSmallCount(estimateHll(decodeHll(m.uniqueRedirectsHll))) })),
+    monthly: monthly.map(m => ({ year: m.year, month: m.month, uniqueViews: suppressSmallCount(monthlyUniqueViews(m)), uniqueRedirects: suppressSmallCount(monthlyUniqueRedirects(m)) })),
   });
 }
