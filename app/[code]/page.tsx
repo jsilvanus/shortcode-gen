@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getActiveLink } from "@/lib/links/service";
 import { getCurrentDomain } from "@/lib/domain-context";
 import { recordVisit } from "@/lib/analytics";
+import { getTrustedClientIp } from "@/lib/security/client-ip";
 
 export default async function ShortLinkPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
@@ -16,7 +17,7 @@ export default async function ShortLinkPage({ params }: { params: Promise<{ code
   const link = await getActiveLink(domain.id, code);
   if (!link) notFound();
   const requestHeaders = await headers();
-  const ip = requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ?? requestHeaders.get("x-real-ip") ?? "unknown";
+  const ip = getTrustedClientIp(requestHeaders);
   const userAgent = requestHeaders.get("user-agent") ?? "unknown";
   await recordVisit({ shortLinkId: link.id, eventType: "PAGE_VIEW", ip, userAgent });
 
