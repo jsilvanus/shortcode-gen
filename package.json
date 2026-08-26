@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run --exclude 'tests/**/*.integration.test.ts'",
-    "test:integration": "vitest run tests/domain-isolation.integration.test.ts",
+    "test:integration": "vitest run integration.test",
     "test:watch": "vitest",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

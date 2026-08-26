@@ -8,6 +8,7 @@ import { generateQrCode, type QrFormat } from "@/lib/qr";
 export async function GET(request: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
   const context = await getCurrentDomainContext();
+  if (context.rateLimited) return NextResponse.json({ error: "Too many requests" }, { status: 429, headers: { "Retry-After": "60" } });
   const link = await db.shortLink.findUnique({ where: { domainId_code: { domainId: context.domain.id, code: canonicalizeCode(code) } } });
   if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const user = context.user;

@@ -1,6 +1,19 @@
 import { headers } from "next/headers";
 import { getCurrentUser } from "@/lib/auth/session";
+import { resolveApiKeyAuth } from "@/lib/auth/api-keys";
 import { getActiveDomainByHostname, getDomainMembership } from "@/lib/domain";
+
+function getBearerToken(requestHeaders: Headers): string | null {
+  const header = requestHeaders.get("authorization");
+  if (!header?.startsWith("Bearer ")) return null;
+  const token = header.slice("Bearer ".length).trim();
+  return token || null;
+}
+
+function getClientIp(requestHeaders: Headers): string {
+  const forwarded = requestHeaders.get("x-forwarded-for");
+  return forwarded?.split(",")[0]?.trim() || requestHeaders.get("x-real-ip") || "unknown";
+}
 
 export async function getRequestHostname(): Promise<string> {
   const requestHeaders = await headers();
@@ -25,13 +38,23 @@ export async function getCurrentDomain() {
 }
 
 export async function getCurrentDomainContext() {
-  const [domain, user] = await Promise.all([getCurrentDomain(), getCurrentUser()]);
+  const domain = await getCurrentDomain();
+  const requestHeaders = await headers();
+  const bearer = getBearerToken(requestHeaders);
+  if (bearer) {
+    const result = await resolveApiKeyAuth(bearer, domain.id, getClientIp(requestHeaders));
+    if (result.status === "rate_limited") return { domain, user: null, membership: null, rateLimited: true };
+    if (result.status === "invalid") return { domain, user: null, membership: null, rateLimited: false };
+    return { domain, user: result.user, membership: result.membership, rateLimited: false };
+  }
+  const user = await getCurrentUser();
   const membership = user ? await getDomainMembership(user.id, domain.id) : null;
-  return { domain, user, membership };
+  return { domain, user, membership, rateLimited: false };
 }
 
 export async function requireCurrentDomainMembership() {
   const context = await getCurrentDomainContext();
+  if (context.rateLimited) throw new Error("RATE_LIMITED");
   if (!context.user) throw new Error("AUTHENTICATION_REQUIRED");
   if (!context.membership) throw new Error("DOMAIN_ACCESS_REQUIRED");
   return { domain: context.domain, user: context.user, membership: context.membership };
@@ -41,4 +64,11 @@ export async function requireCurrentDomainAdmin() {
   const context = await requireCurrentDomainMembership();
   if (context.membership.role !== "ADMIN") throw new Error("DOMAIN_ADMIN_REQUIRED");
   return context;
+}
+
+/** Maps the sentinel errors thrown by requireCurrentDomain* to HTTP status codes. */
+export function authErrorStatus(message: string, fallback: number): number {
+  if (message === "RATE_LIMITED") return 429;
+  if (message === "AUTHENTICATION_REQUIRED") return 401;
+  return fallback;
 }
