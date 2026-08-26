@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatCount } from "@/lib/format-count";
 
-type Stats = { exact: boolean; totals: { pageViews: number; redirects: number; uniqueViews: number; uniqueRedirects: number }; daily: { date: string; pageViews: number; redirects: number }[]; monthly: { year: number; month: number; uniqueViews: number; uniqueRedirects: number }[] };
+type Stats = { exact: boolean; totals: { pageViews: number | null; redirects: number | null; uniqueViews: number | null; uniqueRedirects: number | null }; daily: { date: string; pageViews: number | null; redirects: number | null }[]; monthly: { year: number; month: number; uniqueViews: number | null; uniqueRedirects: number | null }[] };
 
 const ranges = { "7d": 7, "30d": 30, "90d": 90, "year": "year" } as const;
 
@@ -19,9 +20,9 @@ export function LinkStats({ code }: { code: string }) {
   return <section aria-label="Link statistics">
     <label>Time range <select value={range} onChange={e => setRange(e.target.value as keyof typeof ranges)}><option value="7d">7 days</option><option value="30d">30 days</option><option value="90d">90 days</option><option value="year">This year</option></select></label>
     <p>{stats.exact ? "Exact" : "Estimated unique visitor count"}</p>
-    <div><strong>{stats.totals.pageViews}</strong> page views · <strong>{stats.totals.redirects}</strong> redirects</div>
-    <div><strong>{stats.totals.uniqueViews}</strong> unique viewers · <strong>{stats.totals.uniqueRedirects}</strong> unique redirectors</div>
-    {stats.daily.length > 0 && <ul>{stats.daily.slice(-30).map(d => <li key={d.date}>{new Date(d.date).toLocaleDateString()}: {d.pageViews} views, {d.redirects} redirects</li>)}</ul>}
-    {stats.monthly.length > 0 && <ul>{stats.monthly.map(m => <li key={`${m.year}-${m.month}`}>{m.year}-{String(m.month).padStart(2, "0")}: ~{m.uniqueViews} unique views, ~{m.uniqueRedirects} unique redirects</li>)}</ul>}
+    <div><strong>{formatCount(stats.totals.pageViews)}</strong> page views · <strong>{formatCount(stats.totals.redirects)}</strong> redirects</div>
+    <div><strong>{formatCount(stats.totals.uniqueViews)}</strong> unique viewers · <strong>{formatCount(stats.totals.uniqueRedirects)}</strong> unique redirectors</div>
+    {stats.daily.length > 0 && <ul>{stats.daily.slice(-30).map(d => <li key={d.date}>{new Date(d.date).toLocaleDateString()}: {formatCount(d.pageViews)} views, {formatCount(d.redirects)} redirects</li>)}</ul>}
+    {stats.monthly.length > 0 && <ul>{stats.monthly.map(m => <li key={`${m.year}-${m.month}`}>{m.year}-{String(m.month).padStart(2, "0")}: ~{formatCount(m.uniqueViews)} unique views, ~{formatCount(m.uniqueRedirects)} unique redirects</li>)}</ul>}
   </section>;
 }

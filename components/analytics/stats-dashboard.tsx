@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { formatCount } from "@/lib/format-count";
 
-type Stats = { totals: { pageViews: number; redirects: number; uniqueViews: number; uniqueRedirects: number }; daily: { date: string; pageViews: number; redirects: number }[]; linkCount?: number };
+type Stats = { totals: { pageViews: number | null; redirects: number | null; uniqueViews: number | null; uniqueRedirects: number | null }; daily: { date: string; pageViews: number | null; redirects: number | null }[]; linkCount?: number };
 type Preset = "7d" | "30d" | "90d" | "all" | "custom";
 
 function range(preset: Preset, from: string, to: string) {
@@ -30,9 +31,9 @@ export function StatsDashboard({ scope, id }: { scope: "link" | "collection"; id
     {preset === "custom" && <div><input type="date" value={fromInput} onChange={e => setFromInput(e.target.value)} /><input type="date" value={toInput} onChange={e => setToInput(e.target.value)} /></div>}
     {!stats ? <p>Loading statistics…</p> : <>
       {stats.linkCount !== undefined && <p>{stats.linkCount} links</p>}
-      <p><strong>{stats.totals.pageViews}</strong> page views · <strong>{stats.totals.redirects}</strong> redirects</p>
-      <p><strong>{stats.totals.uniqueViews}</strong> unique viewers · <strong>{stats.totals.uniqueRedirects}</strong> unique redirectors</p>
-      <ul>{stats.daily.map(d => <li key={d.date}>{new Date(d.date).toLocaleDateString()}: {d.pageViews} views, {d.redirects} redirects</li>)}</ul>
+      <p><strong>{formatCount(stats.totals.pageViews)}</strong> page views · <strong>{formatCount(stats.totals.redirects)}</strong> redirects</p>
+      <p><strong>{formatCount(stats.totals.uniqueViews)}</strong> unique viewers · <strong>{formatCount(stats.totals.uniqueRedirects)}</strong> unique redirectors</p>
+      <ul>{stats.daily.map(d => <li key={d.date}>{new Date(d.date).toLocaleDateString()}: {formatCount(d.pageViews)} views, {formatCount(d.redirects)} redirects</li>)}</ul>
     </>}
   </section>;
 }

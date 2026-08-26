@@ -1,8 +1,20 @@
 import { createHmac } from "node:crypto";
 import { db } from "@/lib/db";
 import { addHll, decodeHll, emptyHll, encodeHll } from "@/lib/hll";
+import { MIN_REPORTED_CELL } from "@/lib/analytics-constants";
 
 export type VisitEventType = "PAGE_VIEW" | "REDIRECT";
+
+/**
+ * A nonzero count under this threshold pinpoints "a specific handful of people, on this specific
+ * day/link" almost as precisely as naming them — a real risk for a viewer who isn't the link's
+ * owner (another domain member on a public link, or an admin on someone else's private one).
+ * True zeros and genuinely aggregate counts pass through unchanged; only that thin "somebody, but
+ * very few" band gets hidden from stats API responses.
+ */
+export function suppressSmallCount(n: number): number | null {
+  return n > 0 && n < MIN_REPORTED_CELL ? null : n;
+}
 
 // Scoped per link (not just per year+ip+useragent) so the same visitor hashes differently on
 // every link — without this, one person's hash was stable across every link and domain in the

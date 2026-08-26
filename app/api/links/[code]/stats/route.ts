@@ -4,6 +4,7 @@ import { canonicalizeCode } from "@/lib/links/codes";
 import { getCurrentDomainContext } from "@/lib/domain-context";
 import { canViewLink } from "@/lib/auth/authorization";
 import { estimateHll, mergeHll, decodeHll } from "@/lib/hll";
+import { suppressSmallCount } from "@/lib/analytics";
 
 export async function GET(request: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
@@ -26,5 +27,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ code
   const hllRedirects = mergeHll(monthly.filter(m => m.year * 100 + m.month >= from.getUTCFullYear() * 100 + (from.getUTCMonth() + 1) && m.year * 100 + m.month <= to.getUTCFullYear() * 100 + (to.getUTCMonth() + 1)).map(m => decodeHll(m.uniqueRedirectsHll)));
   const fullyRaw = to.getTime() <= Date.now() && from.getTime() >= Date.now() - 90 * 86400000;
   const totals = daily.reduce((a, d) => ({ pageViews: a.pageViews + d.pageViews, redirects: a.redirects + d.redirects }), { pageViews: 0, redirects: 0 });
-  return NextResponse.json({ from, to, exact: fullyRaw, totals: { ...totals, uniqueViews: fullyRaw ? exactViews : estimateHll(hllViews), uniqueRedirects: fullyRaw ? exactRedirects : estimateHll(hllRedirects) }, daily, monthly: monthly.map(m => ({ year: m.year, month: m.month, uniqueViews: estimateHll(decodeHll(m.uniqueViewsHll)), uniqueRedirects: estimateHll(decodeHll(m.uniqueRedirectsHll)) })) });
+  const uniqueViews = fullyRaw ? exactViews : estimateHll(hllViews);
+  const uniqueRedirects = fullyRaw ? exactRedirects : estimateHll(hllRedirects);
+  return NextResponse.json({
+    from, to, exact: fullyRaw,
+    totals: { pageViews: suppressSmallCount(totals.pageViews), redirects: suppressSmallCount(totals.redirects), uniqueViews: suppressSmallCount(uniqueViews), uniqueRedirects: suppressSmallCount(uniqueRedirects) },
+    daily: daily.map(d => ({ date: d.date, pageViews: suppressSmallCount(d.pageViews), redirects: suppressSmallCount(d.redirects), uniqueViews: suppressSmallCount(d.uniqueViews), uniqueRedirects: suppressSmallCount(d.uniqueRedirects) })),
+    monthly: monthly.map(m => ({ year: m.year, month: m.month, uniqueViews: suppressSmallCount(estimateHll(decodeHll(m.uniqueViewsHll))), uniqueRedirects: suppressSmallCount(estimateHll(decodeHll(m.uniqueRedirectsHll))) })),
+  });
 }

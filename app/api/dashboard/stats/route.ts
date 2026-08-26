@@ -3,6 +3,7 @@ import { getCurrentDomainContext } from "@/lib/domain-context";
 import { db } from "@/lib/db";
 import { canViewLink } from "@/lib/auth/authorization";
 import { estimateHll, mergeHll, decodeHll } from "@/lib/hll";
+import { suppressSmallCount } from "@/lib/analytics";
 
 export async function GET(request: Request) {
   const context = await getCurrentDomainContext();
@@ -31,5 +32,14 @@ export async function GET(request: Request) {
   const viewsHll = mergeHll(relevant.map(m => decodeHll(m.uniqueViewsHll)));
   const redirectsHll = mergeHll(relevant.map(m => decodeHll(m.uniqueRedirectsHll)));
   const rawWindow = from.getTime() >= Date.now() - 90 * 86400000 && to.getTime() <= Date.now();
-  return NextResponse.json({ from, to, exact: rawWindow, totals: { pageViews: daily.reduce((n, d) => n + d.pageViews, 0), redirects: daily.reduce((n, d) => n + d.redirects, 0), uniqueViews: estimateHll(viewsHll), uniqueRedirects: estimateHll(redirectsHll) }, daily: [...dailyMap.entries()].map(([date, value]) => ({ date, ...value })) });
+  return NextResponse.json({
+    from, to, exact: rawWindow,
+    totals: {
+      pageViews: suppressSmallCount(daily.reduce((n, d) => n + d.pageViews, 0)),
+      redirects: suppressSmallCount(daily.reduce((n, d) => n + d.redirects, 0)),
+      uniqueViews: suppressSmallCount(estimateHll(viewsHll)),
+      uniqueRedirects: suppressSmallCount(estimateHll(redirectsHll)),
+    },
+    daily: [...dailyMap.entries()].map(([date, value]) => ({ date, pageViews: suppressSmallCount(value.pageViews), redirects: suppressSmallCount(value.redirects) })),
+  });
 }

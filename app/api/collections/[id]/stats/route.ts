@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentDomainContext } from "@/lib/domain-context";
 import { mergeHll, estimateHll, decodeHll } from "@/lib/hll";
+import { suppressSmallCount } from "@/lib/analytics";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -37,5 +38,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const key = d.date.toISOString().slice(0, 10); const current = acc[key] ?? { date: key, pageViews: 0, redirects: 0 };
     current.pageViews += d.pageViews; current.redirects += d.redirects; acc[key] = current; return acc;
   }, {})).sort((a, b) => a.date.localeCompare(b.date));
-  return NextResponse.json({ collectionId: id, from, to, exact: false, linkCount: ids.length, totals: { ...totals, uniqueViews, uniqueRedirects }, daily: dailySeries, monthly: relevant.map(m => ({ year: m.year, month: m.month, uniqueViews: estimateHll(decodeHll(m.uniqueViewsHll)), uniqueRedirects: estimateHll(decodeHll(m.uniqueRedirectsHll)) })) });
+  return NextResponse.json({
+    collectionId: id, from, to, exact: false, linkCount: ids.length,
+    totals: { pageViews: suppressSmallCount(totals.pageViews), redirects: suppressSmallCount(totals.redirects), uniqueViews: suppressSmallCount(uniqueViews), uniqueRedirects: suppressSmallCount(uniqueRedirects) },
+    daily: dailySeries.map(d => ({ date: d.date, pageViews: suppressSmallCount(d.pageViews), redirects: suppressSmallCount(d.redirects) })),
+    monthly: relevant.map(m => ({ year: m.year, month: m.month, uniqueViews: suppressSmallCount(estimateHll(decodeHll(m.uniqueViewsHll))), uniqueRedirects: suppressSmallCount(estimateHll(decodeHll(m.uniqueRedirectsHll))) })),
+  });
 }

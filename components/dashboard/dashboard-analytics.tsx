@@ -12,10 +12,11 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ScheduleIcon from "@mui/icons-material/Schedule";
 import ClearIcon from "@mui/icons-material/Clear";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { formatCount } from "@/lib/format-count";
 
 type LinkOption = { id: string; code: string; title?: string | null; targetUrl: string; isPrivate: boolean; active: boolean; expiresAt?: string | null; collectionIds: string[] };
 type CollectionOption = { id: string; name: string; isPrivate: boolean };
-type Stats = { exact: boolean; totals: { pageViews: number; redirects: number; uniqueViews: number; uniqueRedirects: number }; daily: { date: string; pageViews: number; redirects: number }[] };
+type Stats = { exact: boolean; totals: { pageViews: number | null; redirects: number | null; uniqueViews: number | null; uniqueRedirects: number | null }; daily: { date: string; pageViews: number | null; redirects: number | null }[] };
 const ranges = { "7d": 7, "30d": 30, "90d": 90, year: "year" } as const;
 
 export function DashboardAnalytics({ links, collections }: { links: LinkOption[]; collections: CollectionOption[] }) {
@@ -69,6 +70,6 @@ export function DashboardAnalytics({ links, collections }: { links: LinkOption[]
     </Box></CardContent></Card>
 
     {loading && <Typography color="text.secondary">Loading statistics…</Typography>}
-    {stats && <><Stack direction={{ xs: "column", sm: "row" }} spacing={2}>{[["Page views", stats.totals.pageViews], ["Redirects", stats.totals.redirects], ["Unique visitors", stats.totals.uniqueViews], ["Unique redirects", stats.totals.uniqueRedirects]].map(([label, value]) => <Card key={String(label)} variant="outlined" sx={{ flex: 1 }}><CardContent><Typography variant="body2" color="text.secondary">{label}</Typography><Typography variant="h4">{Number(value).toLocaleString()}</Typography></CardContent></Card>)}</Stack><Card variant="outlined"><CardContent><Stack direction="row" justifyContent="space-between" alignItems="center"><Typography variant="h6">Traffic over time</Typography><Chip size="small" label={stats.exact ? "Exact uniques" : "Estimated uniques"} /></Stack><Box sx={{ width: "100%", height: 300, mt: 2 }}><ResponsiveContainer><LineChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="label" /><YAxis allowDecimals={false} /><Tooltip /><Line type="monotone" dataKey="pageViews" name="Views" stroke="var(--mui-palette-primary-main)" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="redirects" name="Redirects" stroke="var(--mui-palette-secondary-main)" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></Box></CardContent></Card></>}
+    {stats && <><Stack direction={{ xs: "column", sm: "row" }} spacing={2}>{([["Page views", stats.totals.pageViews], ["Redirects", stats.totals.redirects], ["Unique visitors", stats.totals.uniqueViews], ["Unique redirects", stats.totals.uniqueRedirects]] as const).map(([label, value]) => <Card key={label} variant="outlined" sx={{ flex: 1 }}><CardContent><Typography variant="body2" color="text.secondary">{label}</Typography><Typography variant="h4">{formatCount(value)}</Typography></CardContent></Card>)}</Stack><Card variant="outlined"><CardContent><Stack direction="row" justifyContent="space-between" alignItems="center"><Typography variant="h6">Traffic over time</Typography><Chip size="small" label={stats.exact ? "Exact uniques" : "Estimated uniques"} /></Stack><Box sx={{ width: "100%", height: 300, mt: 2 }}><ResponsiveContainer><LineChart data={chartData}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="label" /><YAxis allowDecimals={false} /><Tooltip /><Line type="monotone" dataKey="pageViews" name="Views" stroke="var(--mui-palette-primary-main)" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="redirects" name="Redirects" stroke="var(--mui-palette-secondary-main)" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></Box></CardContent></Card></>}
   </Box>;
 }

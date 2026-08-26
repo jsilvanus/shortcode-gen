@@ -20,8 +20,8 @@ This is an engineering inventory of data represented by the current database sch
 | Screenshot (landscape + portrait) | Preview | May contain arbitrary personal data visible on target page | Enforced: deleted at link expiry, at link deletion, and on re-render (old file replaced) | Persistent file storage; can be disabled per-link (`screenshotDisabled`) |
 | Link visit event | Analytics | Potentially | Enforced: 90 days | Domain/link scoped |
 | Visitor hash | Analytics | Potentially pseudonymous personal data | Same as link visit event | Scoped per short link (year + linkId + ip + userAgent), so it cannot correlate one visitor across different links |
-| Daily statistics | Analytics | Usually aggregate; depends on inputs | No complete retention policy yet | Link scoped |
-| Monthly HLL statistics | Analytics | Aggregate/approximate; depends on inputs | No complete retention policy yet | Link scoped |
+| Daily statistics | Analytics | Small nonzero counts can single out a specific handful of visitors on a specific day | Row retention: no complete policy yet. Small-cell disclosure: mitigated — stats API responses report a nonzero count under the reporting threshold as suppressed (`null`) rather than the exact number | Link scoped |
+| Monthly HLL statistics | Analytics | Aggregate/approximate; depends on inputs | Row retention: no complete policy yet. Same small-cell suppression as daily statistics applies to the estimated unique counts served from these rows | Link scoped |
 | Link timestamps | Operations | Potentially contextual data | Link lifetime | Creation/update/click/fetch times |
 | Job errors | Worker diagnostics | May contain target-specific information | No complete retention policy yet | Avoid secrets in errors |
 | Link complaint | Abuse/quality reporting | Free-text message may contain personal data volunteered by the reporter | No complete retention policy yet | No reporter identifier stored; rate-limited per link+IP |
@@ -30,6 +30,12 @@ This is an engineering inventory of data represented by the current database sch
 | Rate-limit attempt state (`LoginAttempt`, `ApiRequestAttempt`) | Abuse prevention | Potentially, depending on key | Enforced: `LoginAttempt` at reset, `ApiRequestAttempt` 90 days after reset | Authentication/API infrastructure |
 
 ## Important privacy observations
+
+### Small-cell disclosure in daily/monthly statistics
+
+Unlike the visitor hash, `LinkDailyStat`'s `pageViews`/`redirects`/`uniqueViews`/`uniqueRedirects` are plain integers. A busy link's count is effectively anonymous, but a low-traffic link (a one-off invite sent to a specific person, a small pastoral-care link) can make an exact small count itself the personal-data disclosure — e.g. "1 unique view on 2026-08-14" tells anyone who already knows who the link was sent to that a specific person acted on a specific day. This risk is independent of the visitorHash scoping fix above and isn't bounded to the link's own owner: any domain member can view stats for a non-private link they don't own, and any domain admin can view stats for every link in the domain.
+
+All stats API responses (`/api/links/[code]/stats`, `/api/dashboard/stats`, `/api/collections/[id]/stats`) now suppress this: a nonzero count below `MIN_REPORTED_CELL` (3) is reported as `null` instead of the exact number, both in daily/monthly breakdowns and in range totals. A true zero is unaffected — only the "somebody, but very few" band is hidden. This addresses the disclosure risk in what gets served; it does not by itself give the underlying `LinkDailyStat`/`LinkMonthlyStat` rows a retention schedule (see "Missing operator decisions" below).
 
 ### Visitor analytics
 
@@ -72,7 +78,7 @@ Administrator
 
 The implementation still needs explicit deployment-level decisions for:
 
-- daily/monthly aggregate statistics retention (raw visit events and screenshots now have enforced retention; the aggregates derived from them do not yet);
+- daily/monthly aggregate statistics row retention (raw visit events and screenshots now have enforced retention; the aggregate rows derived from them do not yet — small-cell disclosure in what those rows expose is mitigated separately, see below, but that is not the same thing as a retention schedule for the rows themselves);
 - expired-link record retention/deletion — expiry is a public-access cutoff only, not a deletion trigger; the link record itself stays until an admin deletes it manually;
 - session cleanup for sessions that expire without an explicit logout;
 - job/error-log retention;
