@@ -18,11 +18,11 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  domain-isolation:
-    name: Domain isolation integration test
+  integration:
+    name: Integration tests
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: file:./ci-domain-isolation.db
+      DATABASE_URL: file:./ci-integration.db
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

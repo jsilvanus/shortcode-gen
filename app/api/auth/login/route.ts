@@ -3,14 +3,14 @@ import argon2 from "argon2";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { createSession } from "@/lib/auth/session";
+import { getTrustedClientIp } from "@/lib/security/client-ip";
 
 const schema = z.object({ username: z.string().min(1).max(100), password: z.string().min(1).max(1024) });
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 10;
 
 function clientKey(request: Request, username: string) {
-  const forwarded = request.headers.get("x-forwarded-for");
-  const ip = forwarded?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
+  const ip = getTrustedClientIp(request.headers);
   return `${ip}:${username.toLowerCase()}`;
 }
 

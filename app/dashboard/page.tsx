@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { getCurrentDomainContext } from "@/lib/domain-context";
+import { listApiKeys } from "@/lib/auth/api-keys";
 import { DashboardAnalytics } from "@/components/dashboard/dashboard-analytics";
 import { CollectionManager } from "@/components/dashboard/collection-manager";
 import { LinkManager } from "@/components/dashboard/link-manager";
+import { ApiKeyManager } from "@/components/dashboard/api-key-manager";
 
 export default async function UserDashboardPage() {
   const context = await getCurrentDomainContext();
@@ -48,6 +50,13 @@ export default async function UserDashboardPage() {
     expiresAt: l.expiresAt?.toISOString() ?? null,
     collectionIds: l.collections.map(c => c.collectionId),
   }));
+  const apiKeys = (await listApiKeys(context.domain.id, user.id)).map(k => ({
+    ...k,
+    createdAt: k.createdAt.toISOString(),
+    lastUsedAt: k.lastUsedAt?.toISOString() ?? null,
+    expiresAt: k.expiresAt?.toISOString() ?? null,
+    revokedAt: k.revokedAt?.toISOString() ?? null,
+  }));
 
   return (
     <main>
@@ -68,6 +77,10 @@ export default async function UserDashboardPage() {
       <section style={{ marginTop: 32 }} aria-labelledby="analytics-title">
         <h2 id="analytics-title">Statistics</h2>
         <DashboardAnalytics links={linkOptions} collections={collections} />
+      </section>
+      <section style={{ marginTop: 32 }} aria-labelledby="api-keys-title">
+        <h2 id="api-keys-title">API keys</h2>
+        <ApiKeyManager initial={apiKeys} />
       </section>
       {isDomainAdmin && <p><a href="/admin/dashboard">Administration</a></p>}
     </main>

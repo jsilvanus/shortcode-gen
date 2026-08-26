@@ -1,12 +1,25 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireCurrentDomainMembership } from "@/lib/domain-context";
+import { authErrorStatus, requireCurrentDomainMembership } from "@/lib/domain-context";
 
 const updateSchema = z.object({ name: z.string().trim().min(1).max(100).optional(), description: z.string().trim().max(500).nullable().optional(), isPrivate: z.boolean().optional() }).refine(v => Object.keys(v).length > 0);
 
 async function accessible(id: string, domainId: string, userId: string, isAdmin: boolean) {
   return db.collection.findFirst({ where: { id, domainId, ...(isAdmin ? {} : { ownerId: userId }) } });
+}
+
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { domain, user, membership } = await requireCurrentDomainMembership();
+    const { id } = await params;
+    const collection = await db.collection.findFirst({ where: { id, domainId: domain.id, ...(membership.role === "ADMIN" ? {} : { OR: [{ ownerId: user.id }, { isPrivate: false }] }) } });
+    if (!collection) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json(collection);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not load collection";
+    return NextResponse.json({ error: message }, { status: authErrorStatus(message, 403) });
+  }
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -25,8 +38,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not update collection";
-    const status = message === "AUTHENTICATION_REQUIRED" ? 401 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(message, 400) });
   }
 }
 
@@ -40,7 +52,6 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not delete collection";
-    const status = message === "AUTHENTICATION_REQUIRED" ? 401 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(message, 400) });
   }
 }

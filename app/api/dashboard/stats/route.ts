@@ -6,6 +6,7 @@ import { estimateHll, mergeHll, decodeHll } from "@/lib/hll";
 
 export async function GET(request: Request) {
   const context = await getCurrentDomainContext();
+  if (context.rateLimited) return NextResponse.json({ error: "Too many requests" }, { status: 429, headers: { "Retry-After": "60" } });
   const user = context.user;
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const isSystemAdmin = user.role === "ADMIN";

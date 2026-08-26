@@ -19,6 +19,7 @@ model User {
   collections     Collection[]
   memberships     DomainMembership[]
   domainsCreated  Domain[]            @relation("DomainCreatedBy")
+  apiKeys         ApiKey[]
 }
 
 model Domain {
@@ -35,6 +36,7 @@ model Domain {
   aliases      DomainAlias[]
   collections  Collection[]
   settings     DomainSetting?
+  apiKeys      ApiKey[]
   @@index([active])
 }
 
@@ -80,6 +82,32 @@ model LoginAttempt {
   resetAt   DateTime
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  @@index([resetAt])
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  domainId   String
+  userId     String
+  label      String
+  keyPrefix  String    @unique
+  keyHash    String
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  domain     Domain    @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([domainId])
+  @@index([userId])
+}
+
+model ApiRequestAttempt {
+  key       String   @id
+  count     Int      @default(0)
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   @@index([resetAt])
 }
 

@@ -6,6 +6,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import PauseIcon from "@mui/icons-material/Pause";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import SaveIcon from "@mui/icons-material/Save";
+import QrCode2Icon from "@mui/icons-material/QrCode2";
 import { Alert, Autocomplete, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, Stack, Switch, TextField, Typography } from "@mui/material";
 
 type Collection = { id: string; name: string; isPrivate: boolean };
@@ -22,6 +23,7 @@ export function LinkManager({ initial, collections }: { initial: Link[]; collect
   const [active, setActive] = useState(true);
   const [selectedCollections, setSelectedCollections] = useState<Collection[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [qrLink, setQrLink] = useState<Link | null>(null);
 
   function open(link: Link) {
     setEditing(link); setTargetUrl(link.targetUrl); setTitle(link.title ?? ""); setDescription(link.description ?? "");
@@ -57,6 +59,7 @@ export function LinkManager({ initial, collections }: { initial: Link[]; collect
       {link.collectionIds.map(id => <Chip key={id} size="small" label={collections.find(c => c.id === id)?.name ?? "Collection"} />)}
       <Chip size="small" label={link.isPrivate ? "Private" : "Public"} />
       <Chip size="small" label={link.expiresAt ? `Expires ${new Date(link.expiresAt).toLocaleDateString()}` : "No expiry"} />
+      <IconButton aria-label={`Show QR code for ${link.code}`} onClick={() => setQrLink(link)}><QrCode2Icon /></IconButton>
       {link.canEdit && <><IconButton aria-label={`Edit ${link.code}`} onClick={() => open(link)}><EditIcon /></IconButton><IconButton aria-label={`${link.active ? "Deactivate" : "Activate"} ${link.code}`} onClick={() => toggle(link)}>{link.active ? <PauseIcon /> : <PlayArrowIcon />}</IconButton><IconButton aria-label={`Delete ${link.code}`} color="error" onClick={() => remove(link)}><DeleteIcon /></IconButton></>}
     </Stack>)}
     <Dialog open={!!editing} onClose={() => setEditing(null)} fullWidth maxWidth="sm">
@@ -71,6 +74,19 @@ export function LinkManager({ initial, collections }: { initial: Link[]; collect
         <FormControlLabel control={<Switch checked={active} onChange={e => setActive(e.target.checked)} />} label={active ? "Active" : "Deactivated"} />
       </Stack></DialogContent>
       <DialogActions><Button onClick={() => setEditing(null)}>Cancel</Button><Button variant="contained" startIcon={<SaveIcon />} onClick={save}>Save</Button></DialogActions>
+    </Dialog>
+    <Dialog open={!!qrLink} onClose={() => setQrLink(null)}>
+      <DialogTitle>QR code for /{qrLink?.code}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} alignItems="center" sx={{ pt: 1 }}>
+          {qrLink && <img src={`/api/links/${encodeURIComponent(qrLink.code)}/qr?format=svg`} alt={`QR code for /${qrLink.code}`} width={220} height={220} />}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button href={`/api/links/${encodeURIComponent(qrLink?.code ?? "")}/qr?format=svg`} download={`${qrLink?.code ?? "qr"}-qr.svg`}>Download SVG</Button>
+        <Button href={`/api/links/${encodeURIComponent(qrLink?.code ?? "")}/qr?format=png`} download={`${qrLink?.code ?? "qr"}-qr.png`}>Download PNG</Button>
+        <Button onClick={() => setQrLink(null)}>Close</Button>
+      </DialogActions>
     </Dialog>
   </Stack>;
 }

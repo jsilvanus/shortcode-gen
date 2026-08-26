@@ -1,12 +1,25 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { canonicalizeCode } from "@/lib/links/codes";
-import { canEditLink } from "@/lib/auth/authorization";
+import { canEditLink, canViewLink } from "@/lib/auth/authorization";
 import { getCurrentDomainContext } from "@/lib/domain-context";
 import { validateExpiry, validateTargetUrl } from "@/lib/links/service";
 
+export async function GET(_request: Request, { params }: { params: Promise<{ code: string }> }) {
+  const context = await getCurrentDomainContext();
+  if (context.rateLimited) return NextResponse.json({ error: "Too many requests" }, { status: 429, headers: { "Retry-After": "60" } });
+  const user = context.user;
+  if (!user || !context.membership) return NextResponse.json({ error: "Domain access required" }, { status: user ? 403 : 401 });
+  const { code } = await params;
+  const link = await db.shortLink.findUnique({ where: { domainId_code: { domainId: context.domain.id, code: canonicalizeCode(code) } } });
+  if (!link) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!canViewLink(context.membership.role === "ADMIN" ? "ADMIN" : "USER", link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return NextResponse.json(link);
+}
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ code: string }> }) {
   const context = await getCurrentDomainContext();
+  if (context.rateLimited) return NextResponse.json({ error: "Too many requests" }, { status: 429, headers: { "Retry-After": "60" } });
   const user = context.user;
   if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   if (!context.membership) return NextResponse.json({ error: "Domain access required" }, { status: 403 });
@@ -61,6 +74,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ code: string }> }) {
   const context = await getCurrentDomainContext();
+  if (context.rateLimited) return NextResponse.json({ error: "Too many requests" }, { status: 429, headers: { "Retry-After": "60" } });
   const user = context.user;
   if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   if (!context.membership) return NextResponse.json({ error: "Domain access required" }, { status: 403 });

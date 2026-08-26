@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createCollection, listCollections } from "@/lib/collections/service";
-import { requireCurrentDomainMembership } from "@/lib/domain-context";
+import { authErrorStatus, requireCurrentDomainMembership } from "@/lib/domain-context";
 
 export async function GET() {
   try {
@@ -8,8 +8,7 @@ export async function GET() {
     return NextResponse.json(await listCollections(domain.id, user.id));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not load collections";
-    const status = message === "AUTHENTICATION_REQUIRED" ? 401 : 403;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(message, 403) });
   }
 }
 
@@ -21,7 +20,6 @@ export async function POST(request: Request) {
     return NextResponse.json(await createCollection({ ...body, domainId: domain.id, ownerId: user.id }), { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not create collection";
-    const status = message === "AUTHENTICATION_REQUIRED" ? 401 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: message }, { status: authErrorStatus(message, 400) });
   }
 }
