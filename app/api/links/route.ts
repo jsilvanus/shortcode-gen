@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { createShortLink } from "@/lib/links/service";
 import { getCurrentDomainContext } from "@/lib/domain-context";
+import { recordAuditEvent } from "@/lib/audit/log";
 
 const createSchema = z.object({
   targetUrl: z.string().trim().min(1).max(2048),
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
       ownerId: context.user.id,
       domainId: context.domain.id,
     });
+    await recordAuditEvent({ domainId: context.domain.id, userId: context.user.id, authMethod: context.authMethod, action: "link.create", resourceType: "ShortLink", resourceId: link.id });
     return NextResponse.json(link, { status: 201 });
   } catch (error) {
     console.error("link creation failed", error);

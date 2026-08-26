@@ -20,6 +20,7 @@ model User {
   memberships     DomainMembership[]
   domainsCreated  Domain[]            @relation("DomainCreatedBy")
   apiKeys         ApiKey[]
+  auditSalt       UserAuditSalt?
 }
 
 model Domain {
@@ -37,6 +38,7 @@ model Domain {
   collections  Collection[]
   settings     DomainSetting?
   apiKeys      ApiKey[]
+  auditLogEntries AuditLogEntry[]
   @@index([active])
 }
 
@@ -109,6 +111,33 @@ model ApiRequestAttempt {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([resetAt])
+}
+
+/// Per-user secret used to pseudonymize audit log entries. Deleting the User cascades this
+/// away, permanently and irreversibly severing the link between that user's historical audit
+/// entries and their identity (crypto-shredding) without touching anyone else's history.
+model UserAuditSalt {
+  userId    String   @id
+  salt      String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Never stores a raw userId. `actorPseudonym` is HMAC(AUDIT_HASH_SECRET, userSalt + userId) —
+/// deterministic per user while their account exists, permanently unrecoverable once it doesn't.
+model AuditLogEntry {
+  id             String   @id @default(cuid())
+  domainId       String
+  action         String
+  resourceType   String?
+  resourceId     String?
+  actorPseudonym String
+  authMethod     String
+  createdAt      DateTime @default(now())
+  domain         Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  @@index([domainId, createdAt])
+  @@index([actorPseudonym])
+  @@index([createdAt])
 }
 
 model ShortLink {

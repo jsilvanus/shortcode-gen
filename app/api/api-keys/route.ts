@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createApiKey, listApiKeys } from "@/lib/auth/api-keys";
 import { authErrorStatus, requireCurrentDomainMembership } from "@/lib/domain-context";
+import { recordAuditEvent } from "@/lib/audit/log";
 
 const createSchema = z.object({
   label: z.string().trim().min(1).max(100),
@@ -20,7 +21,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { domain, user } = await requireCurrentDomainMembership();
+    const { domain, user, authMethod } = await requireCurrentDomainMembership();
     const parsed = createSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid API key data" }, { status: 400 });
     const { apiKey, token } = await createApiKey({
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
       label: parsed.data.label,
       expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null,
     });
+    await recordAuditEvent({ domainId: domain.id, userId: user.id, authMethod, action: "apikey.create", resourceType: "ApiKey", resourceId: apiKey.id });
     return NextResponse.json({ id: apiKey.id, label: apiKey.label, keyPrefix: apiKey.keyPrefix, createdAt: apiKey.createdAt, expiresAt: apiKey.expiresAt, token }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not create API key";
