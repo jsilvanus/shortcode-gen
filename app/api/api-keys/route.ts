@@ -21,7 +21,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { domain, user, authMethod } = await requireCurrentDomainMembership();
+    const { domain, user, authMethod, apiKeyId } = await requireCurrentDomainMembership();
     const parsed = createSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: "Invalid API key data" }, { status: 400 });
     const { apiKey, token } = await createApiKey({
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
       label: parsed.data.label,
       expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null,
     });
-    await recordAuditEvent({ domainId: domain.id, userId: user.id, authMethod, action: "apikey.create", resourceType: "ApiKey", resourceId: apiKey.id });
+    await recordAuditEvent({ domainId: domain.id, userId: user.id, authMethod, apiKeyId, action: "apikey.create", resourceType: "ApiKey", resourceId: apiKey.id });
     return NextResponse.json({ id: apiKey.id, label: apiKey.label, keyPrefix: apiKey.keyPrefix, createdAt: apiKey.createdAt, expiresAt: apiKey.expiresAt, token }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not create API key";

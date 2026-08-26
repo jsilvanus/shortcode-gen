@@ -34,7 +34,18 @@ export async function computeActorPseudonym(userId: string): Promise<string | nu
   return createHmac("sha256", requireAuditHashSecret()).update(`${salt}:${userId}`).digest("hex");
 }
 
-export async function recordAuditEvent(input: { domainId: string; userId: string; authMethod: AuthMethod; action: string; resourceType?: string; resourceId?: string }): Promise<void> {
+/** Distinguishes which API key performed an action, without ever storing the raw apiKeyId —
+ *  that alone would 1:1-join back to a user via ApiKey.userId, bypassing the reveal/log
+ *  requirement built for actorPseudonym above. No per-key salt is needed: an apiKeyId is
+ *  already a high-entropy, unenumerable id, and it's cascade-deleted with its owning User —
+ *  once gone, this pseudonym has nothing left to be recomputed from. Deterministic, so a key's
+ *  own owner can always resolve their own entries back to a label by recomputing this for each
+ *  of their own keys. */
+export function computeApiKeyPseudonym(apiKeyId: string): string {
+  return createHmac("sha256", requireAuditHashSecret()).update(apiKeyId).digest("hex");
+}
+
+export async function recordAuditEvent(input: { domainId: string; userId: string; authMethod: AuthMethod; apiKeyId?: string | null; action: string; resourceType?: string; resourceId?: string }): Promise<void> {
   try {
     const actorPseudonym = await computeActorPseudonym(input.userId);
     if (!actorPseudonym) return;
@@ -45,6 +56,7 @@ export async function recordAuditEvent(input: { domainId: string; userId: string
         resourceType: input.resourceType ?? null,
         resourceId: input.resourceId ?? null,
         actorPseudonym,
+        apiKeyPseudonym: input.apiKeyId ? computeApiKeyPseudonym(input.apiKeyId) : null,
         authMethod: input.authMethod,
       },
     });
@@ -55,21 +67,28 @@ export async function recordAuditEvent(input: { domainId: string; userId: string
   }
 }
 
-/** A user's own activity within one domain — always available via self-service, no reveal needed. */
+/** A user's own activity within one domain — always available via self-service, no reveal needed.
+ *  Resolves api_key entries back to the caller's own key labels client-side; nothing here lets
+ *  anyone resolve a key that isn't their own. */
 export async function getOwnAuditLog(userId: string, domainId: string, limit = 200) {
   const actorPseudonym = await computeActorPseudonym(userId);
   if (!actorPseudonym) return [];
-  return db.auditLogEntry.findMany({ where: { domainId, actorPseudonym }, orderBy: { createdAt: "desc" }, take: limit });
+  const [entries, ownKeys] = await Promise.all([
+    db.auditLogEntry.findMany({ where: { domainId, actorPseudonym }, orderBy: { createdAt: "desc" }, take: limit }),
+    db.apiKey.findMany({ where: { domainId, userId }, select: { id: true, label: true } }),
+  ]);
+  const labelByPseudonym = new Map(ownKeys.map(k => [computeApiKeyPseudonym(k.id), k.label]));
+  return entries.map(e => ({ ...e, apiKeyLabel: e.apiKeyPseudonym ? (labelByPseudonym.get(e.apiKeyPseudonym) ?? null) : null }));
 }
 
 /** Domain-admin-only: resolves one member's pseudonymized entries to their identity. The reveal
  *  itself is logged — attributed (pseudonymously) to the admin, naming the pseudonym it resolved
  *  rather than the target's raw userId — so the power to de-anonymize is never silent. */
-export async function getMemberAuditLog(domainId: string, admin: { userId: string; authMethod: AuthMethod }, targetUserId: string, limit = 200) {
+export async function getMemberAuditLog(domainId: string, admin: { userId: string; authMethod: AuthMethod; apiKeyId?: string | null }, targetUserId: string, limit = 200) {
   const targetPseudonym = await computeActorPseudonym(targetUserId);
   if (!targetPseudonym) return [];
   const entries = await db.auditLogEntry.findMany({ where: { domainId, actorPseudonym: targetPseudonym }, orderBy: { createdAt: "desc" }, take: limit });
-  await recordAuditEvent({ domainId, userId: admin.userId, authMethod: admin.authMethod, action: "auditlog.reveal", resourceType: "user", resourceId: targetPseudonym });
+  await recordAuditEvent({ domainId, userId: admin.userId, authMethod: admin.authMethod, apiKeyId: admin.apiKeyId, action: "auditlog.reveal", resourceType: "user", resourceId: targetPseudonym });
   return entries;
 }
 

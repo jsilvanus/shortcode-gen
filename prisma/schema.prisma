@@ -125,18 +125,24 @@ model UserAuditSalt {
 
 /// Never stores a raw userId. `actorPseudonym` is HMAC(AUDIT_HASH_SECRET, userSalt + userId) —
 /// deterministic per user while their account exists, permanently unrecoverable once it doesn't.
+/// `apiKeyPseudonym` (set only when authMethod is "api_key") is HMAC(AUDIT_HASH_SECRET, apiKeyId)
+/// — lets entries from the same key be correlated, and lets the key's own owner resolve it back
+/// to a label client-side, without anyone else being able to join it to an identity via the
+/// ApiKey table directly.
 model AuditLogEntry {
-  id             String   @id @default(cuid())
-  domainId       String
-  action         String
-  resourceType   String?
-  resourceId     String?
-  actorPseudonym String
-  authMethod     String
-  createdAt      DateTime @default(now())
-  domain         Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  id               String   @id @default(cuid())
+  domainId         String
+  action           String
+  resourceType     String?
+  resourceId       String?
+  actorPseudonym   String
+  apiKeyPseudonym  String?
+  authMethod       String
+  createdAt        DateTime @default(now())
+  domain           Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
   @@index([domainId, createdAt])
   @@index([actorPseudonym])
+  @@index([apiKeyPseudonym])
   @@index([createdAt])
 }
 

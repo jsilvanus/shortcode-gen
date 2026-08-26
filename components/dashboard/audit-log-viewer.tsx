@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Autocomplete, Box, Chip, Stack, TextField, Typography } from "@mui/material";
 
-type Entry = { action: string; resourceType: string | null; resourceId: string | null; authMethod: string; createdAt: string };
+type Entry = { action: string; resourceType: string | null; resourceId: string | null; authMethod: string; apiKeyLabel?: string | null; createdAt: string };
 type Member = { id: string; username: string };
 
 function EntryList({ entries }: { entries: Entry[] }) {
@@ -14,7 +14,7 @@ function EntryList({ entries }: { entries: Entry[] }) {
         <Typography variant="subtitle2">{e.action}{e.resourceType ? ` — ${e.resourceType}${e.resourceId ? ` (${e.resourceId})` : ""}` : ""}</Typography>
         <Typography variant="caption" color="text.secondary">{new Date(e.createdAt).toLocaleString()}</Typography>
       </Stack>
-      <Chip size="small" label={e.authMethod === "api_key" ? "API key" : "Dashboard"} />
+      <Chip size="small" label={e.authMethod === "api_key" ? `API key${e.apiKeyLabel ? `: ${e.apiKeyLabel}` : ""}` : "Dashboard"} />
     </Stack>)}
   </Stack>;
 }

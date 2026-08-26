@@ -25,7 +25,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { domain, user, membership, authMethod } = await requireCurrentDomainMembership();
+    const { domain, user, membership, authMethod, apiKeyId } = await requireCurrentDomainMembership();
     const { id } = await params;
     const collection = await accessible(id, domain.id, user.id, membership.role === "ADMIN");
     if (!collection) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -33,7 +33,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (!parsed.success) return NextResponse.json({ error: "Invalid collection" }, { status: 400 });
     try {
       const updated = await db.collection.update({ where: { id }, data: parsed.data });
-      await recordAuditEvent({ domainId: domain.id, userId: user.id, authMethod, action: "collection.update", resourceType: "Collection", resourceId: updated.id });
+      await recordAuditEvent({ domainId: domain.id, userId: user.id, authMethod, apiKeyId, action: "collection.update", resourceType: "Collection", resourceId: updated.id });
       return NextResponse.json(updated);
     } catch (error: any) {
       if (error?.code === "P2002") return NextResponse.json({ error: "Collection name already exists" }, { status: 409 });
@@ -47,12 +47,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { domain, user, membership, authMethod } = await requireCurrentDomainMembership();
+    const { domain, user, membership, authMethod, apiKeyId } = await requireCurrentDomainMembership();
     const { id } = await params;
     const collection = await accessible(id, domain.id, user.id, membership.role === "ADMIN");
     if (!collection) return NextResponse.json({ error: "Not found" }, { status: 404 });
     await db.collection.delete({ where: { id } });
-    await recordAuditEvent({ domainId: domain.id, userId: user.id, authMethod, action: "collection.delete", resourceType: "Collection", resourceId: id });
+    await recordAuditEvent({ domainId: domain.id, userId: user.id, authMethod, apiKeyId, action: "collection.delete", resourceType: "Collection", resourceId: id });
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not delete collection";

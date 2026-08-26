@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { db } from "../lib/db";
-import { computeActorPseudonym, getMemberAuditLog, getOwnAuditLog, purgeExpiredAuditLog, recordAuditEvent } from "../lib/audit/log";
+import { computeActorPseudonym, computeApiKeyPseudonym, getMemberAuditLog, getOwnAuditLog, purgeExpiredAuditLog, recordAuditEvent } from "../lib/audit/log";
 
 describe("audit log", () => {
   const suffix = Date.now().toString();
@@ -83,6 +83,32 @@ describe("audit log", () => {
     // which is gone, so a freshly-generated one (for a userId that no longer even exists) can
     // only fail to match, not accidentally reproduce the old value.
     expect(await computeActorPseudonym(toDelete.id)).toBeNull();
+  });
+
+  it("distinguishes which API key acted, resolving it to a label only for the key's own owner", async () => {
+    const keyA = await db.apiKey.create({ data: { domainId: domain.id, userId: member.id, label: "MCP", keyPrefix: `mcp-${suffix}`, keyHash: "x" } });
+    const keyB = await db.apiKey.create({ data: { domainId: domain.id, userId: member.id, label: "CI script", keyPrefix: `ci-${suffix}`, keyHash: "y" } });
+
+    expect(computeApiKeyPseudonym(keyA.id)).toBe(computeApiKeyPseudonym(keyA.id));
+    expect(computeApiKeyPseudonym(keyA.id)).not.toBe(computeApiKeyPseudonym(keyB.id));
+
+    await recordAuditEvent({ domainId: domain.id, userId: member.id, authMethod: "api_key", apiKeyId: keyA.id, action: "link.create", resourceType: "ShortLink", resourceId: "link-via-mcp" });
+    await recordAuditEvent({ domainId: domain.id, userId: member.id, authMethod: "api_key", apiKeyId: keyB.id, action: "link.create", resourceType: "ShortLink", resourceId: "link-via-ci" });
+
+    const own = await getOwnAuditLog(member.id, domain.id);
+    expect(own.find(e => e.resourceId === "link-via-mcp")?.apiKeyLabel).toBe("MCP");
+    expect(own.find(e => e.resourceId === "link-via-ci")?.apiKeyLabel).toBe("CI script");
+
+    // The raw apiKeyId is never stored — only its pseudonym.
+    const raw = await db.auditLogEntry.findFirst({ where: { domainId: domain.id, resourceId: "link-via-mcp" } });
+    expect(raw?.apiKeyPseudonym).toBe(computeApiKeyPseudonym(keyA.id));
+    expect(raw?.apiKeyPseudonym).not.toBe(keyA.id);
+
+    // A session-authenticated entry carries no key pseudonym at all.
+    await recordAuditEvent({ domainId: domain.id, userId: member.id, authMethod: "session", action: "link.create", resourceType: "ShortLink", resourceId: "link-via-session" });
+    expect(own.find(e => e.resourceId === "link-via-session")).toBeUndefined(); // not yet re-fetched
+    const ownRefetched = await getOwnAuditLog(member.id, domain.id);
+    expect(ownRefetched.find(e => e.resourceId === "link-via-session")?.apiKeyLabel).toBeNull();
   });
 
   it("purges entries older than the retention window without touching recent ones", async () => {

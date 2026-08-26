@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       ownerId: context.user.id,
       domainId: context.domain.id,
     });
-    await recordAuditEvent({ domainId: context.domain.id, userId: context.user.id, authMethod: context.authMethod, action: "link.create", resourceType: "ShortLink", resourceId: link.id });
+    await recordAuditEvent({ domainId: context.domain.id, userId: context.user.id, authMethod: context.authMethod, apiKeyId: context.apiKeyId, action: "link.create", resourceType: "ShortLink", resourceId: link.id });
     return NextResponse.json(link, { status: 201 });
   } catch (error) {
     console.error("link creation failed", error);

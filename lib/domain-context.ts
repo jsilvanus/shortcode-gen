@@ -39,13 +39,13 @@ export async function getCurrentDomainContext() {
   const bearer = getBearerToken(requestHeaders);
   if (bearer) {
     const result = await resolveApiKeyAuth(bearer, domain.id, getTrustedClientIp(requestHeaders));
-    if (result.status === "rate_limited") return { domain, user: null, membership: null, rateLimited: true, authMethod: "api_key" as const };
-    if (result.status === "invalid") return { domain, user: null, membership: null, rateLimited: false, authMethod: "api_key" as const };
-    return { domain, user: result.user, membership: result.membership, rateLimited: false, authMethod: "api_key" as const };
+    if (result.status === "rate_limited") return { domain, user: null, membership: null, rateLimited: true, authMethod: "api_key" as const, apiKeyId: null };
+    if (result.status === "invalid") return { domain, user: null, membership: null, rateLimited: false, authMethod: "api_key" as const, apiKeyId: null };
+    return { domain, user: result.user, membership: result.membership, rateLimited: false, authMethod: "api_key" as const, apiKeyId: result.apiKeyId };
   }
   const user = await getCurrentUser();
   const membership = user ? await getDomainMembership(user.id, domain.id) : null;
-  return { domain, user, membership, rateLimited: false, authMethod: "session" as const };
+  return { domain, user, membership, rateLimited: false, authMethod: "session" as const, apiKeyId: null };
 }
 
 export async function requireCurrentDomainMembership() {
@@ -53,7 +53,7 @@ export async function requireCurrentDomainMembership() {
   if (context.rateLimited) throw new Error("RATE_LIMITED");
   if (!context.user) throw new Error("AUTHENTICATION_REQUIRED");
   if (!context.membership) throw new Error("DOMAIN_ACCESS_REQUIRED");
-  return { domain: context.domain, user: context.user, membership: context.membership, authMethod: context.authMethod };
+  return { domain: context.domain, user: context.user, membership: context.membership, authMethod: context.authMethod, apiKeyId: context.apiKeyId };
 }
 
 export async function requireCurrentDomainAdmin() {

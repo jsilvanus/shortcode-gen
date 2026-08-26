@@ -70,7 +70,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
     }
     return result;
   });
-  await recordAuditEvent({ domainId: context.domain.id, userId: user.id, authMethod: context.authMethod, action: "link.update", resourceType: "ShortLink", resourceId: updated.id });
+  await recordAuditEvent({ domainId: context.domain.id, userId: user.id, authMethod: context.authMethod, apiKeyId: context.apiKeyId, action: "link.update", resourceType: "ShortLink", resourceId: updated.id });
   return NextResponse.json(updated);
 }
 
@@ -86,6 +86,6 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const role = context.membership.role === "ADMIN" ? "ADMIN" : "USER";
   if (!canEditLink(role, link.ownerId, user.id, link.isPrivate)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await db.shortLink.delete({ where: { id: link.id } });
-  await recordAuditEvent({ domainId: context.domain.id, userId: user.id, authMethod: context.authMethod, action: "link.delete", resourceType: "ShortLink", resourceId: link.id });
+  await recordAuditEvent({ domainId: context.domain.id, userId: user.id, authMethod: context.authMethod, apiKeyId: context.apiKeyId, action: "link.delete", resourceType: "ShortLink", resourceId: link.id });
   return new NextResponse(null, { status: 204 });
 }
