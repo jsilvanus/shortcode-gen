@@ -26,6 +26,7 @@ export function SettingsForm({ initialSettings }: { initialSettings: SiteSetting
         <label>Allowed target domains<textarea value={settings.linkPolicy.allowedDomains.join("\n")} onChange={e => setSettings(s => ({ ...s, linkPolicy: { ...s.linkPolicy, allowedDomains: e.target.value.split(/\r?\n/).map(v => v.trim()).filter(Boolean) } }))} /></label>
         <label><input type="checkbox" checked={settings.linkPolicy.defaultPrivate} onChange={e => setSettings(s => ({ ...s, linkPolicy: { ...s.linkPolicy, defaultPrivate: e.target.checked } }))} /> New links private by default</label>
         <label><input type="checkbox" checked={settings.linkPolicy.allowCustomCodes} onChange={e => setSettings(s => ({ ...s, linkPolicy: { ...s.linkPolicy, allowCustomCodes: e.target.checked } }))} /> Allow custom codes</label>
+        <label>Redirect delay (seconds)<input type="number" min={3} value={settings.linkPolicy.redirectDelaySeconds} onChange={e => setSettings(s => ({ ...s, linkPolicy: { ...s.linkPolicy, redirectDelaySeconds: Math.max(3, Number(e.target.value) || 3) } }))} /></label>
       </fieldset>
       <fieldset><legend>Privacy</legend>
         <label>Data controller<input value={settings.privacy.controllerName} onChange={e => setSettings(s => ({ ...s, privacy: { ...s.privacy, controllerName: e.target.value } }))} /></label>

@@ -9,34 +9,50 @@ This is an engineering inventory of data represented by the current database sch
 | User username | Account identification | Yes, depending on value | Account lifetime | Auth/admin context |
 | Password hash | Authentication | Security credential material | Account lifetime | Never intended for user/API exposure |
 | Session | Authentication | Yes | Until expiry / cleanup | Server-side |
-| Login attempt state | Abuse prevention | Potentially, depending on key | Reset window | Authentication infrastructure |
 | Domain membership | Authorization | Yes, because it links a user to a domain | Membership lifetime | Domain authorization |
 | API key hash/prefix | API authentication | Credential-related | Until expiry/revocation/deletion | Raw secret is not stored as the reusable key |
 | API-key usage timestamp | Operational/security | Potentially | No complete retention policy yet | `lastUsedAt` |
-| Audit actor pseudonym | Accountability | Potentially pseudonymous personal data | No complete retention policy yet | Raw user ID deliberately absent |
+| Audit actor pseudonym | Accountability | Potentially pseudonymous personal data | Enforced: 180 days, purged by the worker | Raw user ID deliberately absent |
 | User audit salt | Audit pseudonymization | Security/personal-data related | User lifetime; deletion breaks historical linkage | Per-user secret |
-| Audit API-key pseudonym | Accountability | Potentially pseudonymous | No complete retention policy yet | Correlation without raw key relation in entry |
-| Short-link target URL | Redirect service | Not inherently; may contain personal data | Link lifetime | User/domain scoped |
-| Link title/description/metadata | Preview | May contain personal data copied from target | Link lifetime | Derived from external target |
-| Screenshot | Preview | May contain arbitrary personal data visible on target page | Link lifetime unless separately retained | Persistent file storage |
-| Link visit event | Analytics | Potentially | No complete retention policy yet | Domain/link scoped |
-| Visitor hash | Analytics | Potentially pseudonymous personal data | No complete retention policy yet | Hashing does not automatically make data anonymous |
-| Daily statistics | Analytics | Usually aggregate; depends on inputs | No complete retention policy yet | Link scoped |
-| Monthly HLL statistics | Analytics | Aggregate/approximate; depends on inputs | No complete retention policy yet | Link scoped |
+| Audit API-key pseudonym | Accountability | Potentially pseudonymous | Same as audit actor pseudonym (180 days) | Correlation without raw key relation in entry |
+| Short-link target URL | Redirect service | Not inherently; may contain personal data | Link record retained until manual deletion; `expiresAt` only stops public access | User/domain scoped |
+| Link title/description/metadata | Preview | May contain personal data copied from target | Same as target URL (manual deletion only) | Derived from external target |
+| Screenshot (landscape + portrait) | Preview | May contain arbitrary personal data visible on target page | Enforced: deleted at link expiry, at link deletion, and on re-render (old file replaced) | Persistent file storage; can be disabled per-link (`screenshotDisabled`) |
+| Link visit event | Analytics | Potentially | Enforced: 90 days | Domain/link scoped |
+| Visitor hash | Analytics | Potentially pseudonymous personal data | Same as link visit event | Scoped per short link (year + linkId + ip + userAgent), so it cannot correlate one visitor across different links |
+| Daily statistics | Analytics | Small nonzero counts can single out a specific handful of visitors on a specific day | Row retention: no complete policy yet. Small-cell disclosure: mitigated — stats API responses report a nonzero count under the reporting threshold as suppressed (`null`) rather than the exact number | Link scoped |
+| Monthly HLL statistics | Analytics | The live HLL sketch enables an insider-only membership-inference attack (see below); the collapsed scalar left behind carries the same small-cell risk as daily statistics | Enforced: a calendar year's sketches live only through the end of that year; once the year closes they are merged into an exact `LinkYearlyStat` union and the sketches themselves are deleted, leaving only plain scalars | Link scoped |
+| Yearly unique statistics (`LinkYearlyStat`) | Analytics | Same small-cell risk as daily statistics; no membership-inference risk (plain scalar, no sketch) | Row retention: no complete policy yet | Link scoped; computed once from that year's HLL sketches before they're discarded |
 | Link timestamps | Operations | Potentially contextual data | Link lifetime | Creation/update/click/fetch times |
 | Job errors | Worker diagnostics | May contain target-specific information | No complete retention policy yet | Avoid secrets in errors |
+| Link complaint | Abuse/quality reporting | Free-text message may contain personal data volunteered by the reporter | No complete retention policy yet | No reporter identifier stored; rate-limited per link+IP |
 | Domain hostname | Service configuration | Usually organization/service data | Domain lifetime | May itself identify an organization/person |
-| Domain settings | Service configuration | Depends on setting values | Domain lifetime | Operator-controlled |
+| Domain settings | Service configuration | Depends on setting values | Domain lifetime | Operator-controlled; includes the default public-redirect delay |
+| Rate-limit attempt state (`LoginAttempt`, `ApiRequestAttempt`) | Abuse prevention | Potentially, depending on key | Enforced: `LoginAttempt` at reset, `ApiRequestAttempt` 90 days after reset | Authentication/API infrastructure |
 
 ## Important privacy observations
 
+### Small-cell disclosure in daily/monthly statistics
+
+Unlike the visitor hash, `LinkDailyStat`'s `pageViews`/`redirects`/`uniqueViews`/`uniqueRedirects` are plain integers. A busy link's count is effectively anonymous, but a low-traffic link (a one-off invite sent to a specific person, a small pastoral-care link) can make an exact small count itself the personal-data disclosure — e.g. "1 unique view on 2026-08-14" tells anyone who already knows who the link was sent to that a specific person acted on a specific day. This risk is independent of the visitorHash scoping fix above and isn't bounded to the link's own owner: any domain member can view stats for a non-private link they don't own, and any domain admin can view stats for every link in the domain.
+
+All stats API responses (`/api/links/[code]/stats`, `/api/dashboard/stats`, `/api/collections/[id]/stats`) now suppress this: a nonzero count below `MIN_REPORTED_CELL` (3) is reported as `null` instead of the exact number, both in daily/monthly breakdowns and in range totals. A true zero is unaffected — only the "somebody, but very few" band is hidden. This addresses the disclosure risk in what gets served; it does not by itself give the underlying `LinkDailyStat`/`LinkMonthlyStat` rows a retention schedule (see "Missing operator decisions" below).
+
+### Monthly HLL sketches: membership inference and one-year retention
+
+A HyperLogLog sketch isn't a simple count — it's a small, deterministic function of the actual set of `visitorHash` values merged into it. Someone who already holds `ANALYTICS_HASH_SECRET` and a target's IP/user-agent (the same prerequisite needed to read raw `LinkVisit` rows directly) can compute that person's hash and test whether merging it would change the sketch: if a register is *already* at or above the value their hash would set, that's consistent with (but doesn't prove) their presence; if it's *below*, that conclusively proves their absence. This is real but narrow — it hands an insider with DB+secret access a probabilistic signal, nothing an outside attacker can use.
+
+What made it worth fixing regardless: unlike raw `LinkVisit` (90-day retention), the monthly HLL sketches previously had no expiry, so this insider-only exposure window never closed. `collapseExpiredYearlyHll` (`lib/analytics.ts`, run by the worker) now closes it at one year: once a calendar year ends, its months' sketches are merged into one true union — computed *before* the sketches are discarded, so the yearly figure (`LinkYearlyStat`) stays an exact distinct count rather than degrading into a sum-of-months overcount — and each month row is collapsed to a plain scalar (`uniqueViewsEstimate`/`uniqueRedirectsEstimate`), with the HLL columns set to `null`. A plain scalar has no registers to test membership against, so it carries only the same (already-mitigated) small-cell risk as `LinkDailyStat`, not the sketch-specific membership-inference risk.
+
+One accuracy trade-off this accepts: a query for a *whole* closed year uses the exact `LinkYearlyStat` union; a query spanning multiple closed years, or a partial slice of one, falls back to summing scalars and can overcount a visitor who appears in more than one of the summed periods. Since a calendar year is the standard reporting period for this deployment, that trade-off only bites for less common range shapes.
+
 ### Visitor analytics
 
-The current schema contains `LinkVisit.visitorHash`. A hash can still be personal data if the operator or another party can reasonably use it to single out or link a person. It should therefore be treated conservatively until the exact derivation and deployment context are assessed.
+The current schema contains `LinkVisit.visitorHash`. A hash can still be personal data if the operator or another party can reasonably use it to single out or link a person. It should therefore be treated conservatively until the exact derivation and deployment context are assessed. The hash is derived per short link (year + link ID + IP + user agent), so it cannot be used on its own to correlate the same visitor's activity across different links or domains — it is scoped to "this visitor, this link", not "this visitor, this deployment".
 
 ### Screenshots
 
-Screenshots are copies of remote web content. They may contain names, profile information, images, contact information or other personal data even when Shortcode Gen itself did not collect those fields directly.
+Screenshots are copies of remote web content, captured in both a landscape and a portrait variant and displayed on the public link-preview page. They may contain names, profile information, images, contact information or other personal data even when Shortcode Gen itself did not collect those fields directly. Because they carry that risk with no independent retention purpose of their own, the files (not just the database rows) are deleted automatically when the link expires, when the link is deleted, and are replaced in place on every re-render; an owner/admin can also disable capture for a given link entirely.
 
 ### Target URLs
 
@@ -71,12 +87,11 @@ Administrator
 
 The implementation still needs explicit deployment-level decisions for:
 
-- analytics retention;
-- audit-log retention;
-- screenshot retention;
-- expired-link retention/deletion;
-- session cleanup;
+- daily statistics and yearly unique statistics row retention (raw visit events, screenshots, and monthly HLL sketches now have enforced retention; `LinkDailyStat`/`LinkYearlyStat` rows do not yet — small-cell disclosure in what those rows expose is mitigated separately, see below, but that is not the same thing as a retention schedule for the rows themselves);
+- expired-link record retention/deletion — expiry is a public-access cutoff only, not a deletion trigger; the link record itself stays until an admin deletes it manually;
+- session cleanup for sessions that expire without an explicit logout;
 - job/error-log retention;
+- link-complaint retention;
 - data-subject request handling;
 - lawful bases for each processing purpose;
 - whether a DPIA is required.

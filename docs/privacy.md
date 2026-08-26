@@ -42,19 +42,29 @@ The service stores target URLs, ownership, domain association and optional metad
 
 ### Metadata and screenshots
 
-The worker fetches administrator-supplied URLs and may render them with a browser. This can copy information from third-party pages into metadata fields or screenshots. Operators should therefore treat the metadata/rendering pipeline as a data-processing boundary.
+The worker fetches administrator-supplied URLs and may render them with a browser. This can copy information from third-party pages into metadata fields or screenshots (captured in both a landscape and a portrait variant, shown on the public link-preview page). Operators should therefore treat the metadata/rendering pipeline as a data-processing boundary. A link owner/admin can disable screenshot capture for a given link entirely.
+
+### Link reports
+
+Public visitors can submit a free-text report about a link from its preview page. Report messages are stored with the link but without any identifier for the reporter; operators should be aware that a visitor could still voluntarily include personal data (their own or someone else's) in the free-text message itself.
 
 ### Analytics
 
 The current implementation includes visit events, visitor hashes and aggregate daily/monthly statistics. These are potentially personal-data processing activities and require an explicit deployment-level retention and lawful-basis assessment.
 
-A hash is not automatically anonymous simply because the original identifier is not stored in clear text.
+A hash is not automatically anonymous simply because the original identifier is not stored in clear text. The visitor hash is scoped per short link (it is derived from the year, the link's own ID, the IP address and the user agent), so it cannot be used to correlate one visitor's activity across different links or domains in the same deployment — a hash only ever answers "did this visitor hit this link", not "everything this visitor did across the site".
+
+Separately, the plain integer counts in `LinkDailyStat`/`LinkMonthlyStat` (page views, redirects, unique views/redirects) carry their own small-cell disclosure risk: for a low-traffic link, an exact small count (e.g. "1 unique view") can itself identify that a specific known recipient acted on a specific day, to any viewer who already knows who the link was sent to — and that viewer isn't necessarily the link's own owner, since other domain members can see stats for non-private links they don't own and admins can see stats for every link. The stats API now suppresses this: any nonzero count below a small reporting threshold is returned as `null` rather than the exact number, in both the daily/monthly breakdowns and the range totals. This addresses disclosure in what's served; it is not a retention schedule for the underlying `LinkDailyStat` rows, which remains open (see Retention below).
+
+The monthly HLL sketch itself carries a different, narrower risk: because it's a deterministic function of the actual visitor hashes merged into it, an insider who already holds `ANALYTICS_HASH_SECRET` and a target's IP/user-agent can test whether that person's hash was merged in (a one-sided test — it can prove absence, not presence). This required the same privileged access as reading raw visit rows directly, but unlike those rows (90-day retention) the sketches previously never expired. They now do: once a calendar year closes, the worker merges that year's months into one exact union (`LinkYearlyStat`, computed before the sketches are discarded) and collapses each month to a plain scalar, deleting the HLL columns — closing that exposure at one year instead of leaving it open indefinitely.
 
 ### Audit logging
 
 Audit records are designed to avoid storing raw user IDs. The implementation derives an actor pseudonym from a per-user salt and an HMAC secret. API-key events can receive a separate pseudonym.
 
 The user's audit salt is deleted with the user, intentionally preventing future reconstruction of the identity association for historical entries.
+
+Audit-log purging (180-day retention) runs as part of the background worker's regular cleanup cycle, so it is enforced by default rather than depending on an operator wiring up an external scheduled call.
 
 ## Access control
 
@@ -76,22 +86,28 @@ A deployment should explicitly define retention for:
 
 - user accounts;
 - sessions;
-- audit logs;
+- audit logs (enforced: 180 days, purged by the worker);
 - API keys;
-- visit events;
-- aggregate statistics;
-- screenshots;
+- visit events (enforced: 90 days);
+- rate-limit attempt state (enforced: `LoginAttempt` at reset, `ApiRequestAttempt` 90 days after reset);
+- monthly unique-visitor sketches (enforced: collapsed to a scalar and deleted once their calendar year closes — see Analytics above);
+- daily statistics and yearly unique-visitor statistics (`LinkDailyStat`, `LinkYearlyStat` row retention — not yet defined; small-cell disclosure in what they expose is mitigated separately, see Analytics above);
+- screenshots (enforced for expiry — see below — but not for links that are simply never re-rendered);
 - metadata;
-- expired links;
+- expired links (the link record itself is not purged automatically — see "Expiry is not deletion" below);
 - failed/completed jobs.
 
 Retention must be based on purpose and legal/operational requirements rather than simply keeping everything indefinitely.
 
 ## Deletion
 
+**Expiry is not deletion.** A link's `expiresAt` only stops the public redirect page from resolving the link (`getActiveLink`); it does not delete the `ShortLink` row, its target URL, title/description, or metadata. Full deletion of a link is a manual admin action (`DELETE /api/links/[code]`). Operators who want expired links actually purged need to build that as an explicit, separate operational process — expiry should not be assumed to satisfy a storage-limitation or erasure obligation on its own.
+
+Screenshots are the one exception to that: because they're a copy of third-party page content with no remaining purpose once a link can no longer be reached publicly, the worker automatically deletes screenshot files (and clears the path fields) once `expiresAt` has passed, independently of whether the link record itself is ever deleted. Screenshot files are also deleted immediately when a link is deleted, when a link's screenshot re-renders (the new file atomically replaces the old one in place), and when an owner/admin explicitly disables the screenshot for a link.
+
 Deletion of a user cascades to the user's audit salt. This is an intentional crypto-shredding mechanism for historical actor linkage.
 
-Domain/link deletion also uses database relationships with cascading behaviour in relevant models. Operators still need to consider persistent files such as screenshots and backups when implementing complete deletion workflows.
+Domain/link deletion also uses database relationships with cascading behaviour in relevant models. Deleting a link now also deletes its screenshot files. Operators still need to consider backups when implementing complete deletion workflows.
 
 ## Data subject rights
 

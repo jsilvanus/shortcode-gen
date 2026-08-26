@@ -32,6 +32,8 @@ export default async function UserDashboardPage() {
         active: true,
         expiresAt: true,
         ownerId: true,
+        screenshotDisabled: true,
+        redirectDelaySeconds: true,
         collections: { select: { collectionId: true } },
       },
       orderBy: { code: "asc" },

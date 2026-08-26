@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getCurrentDomainContext } from "@/lib/domain-context";
 import { db } from "@/lib/db";
 import { canViewLink } from "@/lib/auth/authorization";
-import { estimateHll, mergeHll, decodeHll } from "@/lib/hll";
+import { estimateHll, mergeHll, decodeHll, emptyHll } from "@/lib/hll";
+import { suppressSmallCount, monthlyUniqueViews, monthlyUniqueRedirects, monthOverlapsRange } from "@/lib/analytics";
 
 export async function GET(request: Request) {
   const context = await getCurrentDomainContext();
@@ -25,11 +26,26 @@ export async function GET(request: Request) {
   const monthly = await db.linkMonthlyStat.findMany({ where: { shortLinkId: { in: linkIds } } });
   const dailyMap = new Map<string, { pageViews: number; redirects: number }>();
   for (const d of daily) { const v = dailyMap.get(d.date.toISOString()) ?? { pageViews: 0, redirects: 0 }; v.pageViews += d.pageViews; v.redirects += d.redirects; dailyMap.set(d.date.toISOString(), v); }
-  const firstMonth = from.getUTCFullYear() * 12 + from.getUTCMonth();
-  const lastMonth = to.getUTCFullYear() * 12 + to.getUTCMonth();
-  const relevant = monthly.filter(m => { const n = m.year * 12 + (m.month - 1); return n >= firstMonth && n <= lastMonth; });
-  const viewsHll = mergeHll(relevant.map(m => decodeHll(m.uniqueViewsHll)));
-  const redirectsHll = mergeHll(relevant.map(m => decodeHll(m.uniqueRedirectsHll)));
+  const relevant = monthly.filter(m => monthOverlapsRange(m.year, m.month, from, to));
+  // Live (still-HLL) months merge into an exact cross-link, cross-month union as before; any
+  // month a past year's worth of sketches has already been collapsed into (see
+  // collapseExpiredYearlyHll) only has a scalar left, so it can only be summed in — an
+  // approximation for that portion, consistent with the "Estimated uniques" labeling below.
+  const live = relevant.filter(m => m.uniqueViewsHll || m.uniqueRedirectsHll);
+  const collapsed = relevant.filter(m => !m.uniqueViewsHll && !m.uniqueRedirectsHll);
+  const viewsHll = mergeHll(live.map(m => m.uniqueViewsHll ? decodeHll(m.uniqueViewsHll) : emptyHll()));
+  const redirectsHll = mergeHll(live.map(m => m.uniqueRedirectsHll ? decodeHll(m.uniqueRedirectsHll) : emptyHll()));
+  const uniqueViews = estimateHll(viewsHll) + collapsed.reduce((n, m) => n + monthlyUniqueViews(m), 0);
+  const uniqueRedirects = estimateHll(redirectsHll) + collapsed.reduce((n, m) => n + monthlyUniqueRedirects(m), 0);
   const rawWindow = from.getTime() >= Date.now() - 90 * 86400000 && to.getTime() <= Date.now();
-  return NextResponse.json({ from, to, exact: rawWindow, totals: { pageViews: daily.reduce((n, d) => n + d.pageViews, 0), redirects: daily.reduce((n, d) => n + d.redirects, 0), uniqueViews: estimateHll(viewsHll), uniqueRedirects: estimateHll(redirectsHll) }, daily: [...dailyMap.entries()].map(([date, value]) => ({ date, ...value })) });
+  return NextResponse.json({
+    from, to, exact: rawWindow,
+    totals: {
+      pageViews: suppressSmallCount(daily.reduce((n, d) => n + d.pageViews, 0)),
+      redirects: suppressSmallCount(daily.reduce((n, d) => n + d.redirects, 0)),
+      uniqueViews: suppressSmallCount(uniqueViews),
+      uniqueRedirects: suppressSmallCount(uniqueRedirects),
+    },
+    daily: [...dailyMap.entries()].map(([date, value]) => ({ date, pageViews: suppressSmallCount(value.pageViews), redirects: suppressSmallCount(value.redirects) })),
+  });
 }
